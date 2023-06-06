@@ -1,6 +1,9 @@
 # Import sys module to get commandline arguments
 import sys
 
+# Import module to get Sequence object for validation
+import collections.abc
+
 # Import snes_checksum module to use checksum functions
 import snes_checksum as sc
 
@@ -24,25 +27,30 @@ OFFSET_DICTIONARY = {
    0x_40_FF_B0: {"flag": 5, "l": "ExHiRom"}
 }
 
-def decodeMapMode(self):
-    print(f"decodeMapMode")
+def decodeMapSpeed(self):
+    # print(f"Map/Speed - {}")
     rawData = self.rawData
     speedBit = None
-    mapMode = 0
+    mapModeNibble = None
+    if(len(rawData) != 1):
+        raise MemoryError("Map/Speed byte was not read from memory correctly")
+
     for b in rawData:
-        for i in range(8):
-            bit = (b >> i) & 1
-            print(f"bit{i}:{bit}")
-            if i == 4:
-                speedBit = bit
-            elif i < 4:
-                mapMode = mapMode << bit
-    return "decodeMapMode"
+        speedBit = (b >> 3) & 1
+        mapModeNibble = b & 0x0F
+    
+    modeLabel = "Unknown"
+    for mm in OFFSET_DICTIONARY.values():
+        if mm['flag'] ==  mapModeNibble:
+            modeLabel = mm['l']
+            break
 
-DECODE_FUNCTIONS= {
-    "Map mode": decodeMapMode
-}
+    speedLabel = SPEED_MODES[speedBit]['l']
 
+    return [
+        HeaderField("Speed Flag",f"[4]",speedBit,lambda self : modeLabel ),
+        HeaderField("Map Mode",f"[3:0]",mapModeNibble,lambda self : speedLabel)
+    ]
 
 
 HEADER_OFFSET = [0x_7F_B0]
@@ -60,7 +68,7 @@ HEADER_FIELDS = [
     ("Special Version", 1, "hex"), 
     ("Cart SubType", 1, "hex"), 
     ("Game title", 21, "jisx0201"), 
-    ("Map mode", 1, decodeMapMode), 
+    ("Map/Speed", 1, decodeMapSpeed), 
     ("Cartridge type", 1, "hex"), 
     ("ROM size", 1, "hex"), 
     ("RAM size", 1, "hex"), 
@@ -86,7 +94,7 @@ H_FIELDS = [ # Header fields to read and print
  ("ROM ver", 1, "hex")
 ]
 
-ROW_DELIM = "::"
+ROW_DELIM = "\t|\t"
 
 def r_byte(file, offset):
  """Read a byte from a file at a given offset."""
@@ -109,7 +117,7 @@ def prn_tbl(row):
     message = row.pop(0)
     for cell in row:
         # print(f"{cell}")
-        message = f"{message}\t{ROW_DELIM}\t{cell}"
+        message = f"{message}{ROW_DELIM}{cell}"
     p_msg(message) # Write the message with a newline
 
 # Get the filename from the commandline argument or use a default one if not provided
@@ -152,24 +160,30 @@ class FileHeader():
 
         self.filename = filename
         self.offset = offset
-        self.fields = []
+        self.fields = {}
 
         f.seek(offset)
         for name, size, enc in HEADER_FIELDS: # Loop through the header fields to read and print them 
             start = f.tell()
             data = f.read(size) # Read the data of the field 
-            aField = HeaderField(name, f"{hex(start)}:{hex(start+size-1)}", data, enc)
-            prn_tbl([f"{hex(start)}:{hex(start+size-1)}", name, aField.value])
-            self.fields.append(aField)
+            aField = HeaderField(name, hex(start), data, enc)
+            # prn_tbl([f"{hex(start)}:{hex(start+size-1)}", name, aField.value])
+            self.fields[name] = aField
 
         f.close()
-    
-    def readHeader():
-        pass
 
     def printFields(self):
-        for field in self.fields:
-            prn_tbl([field.address, field.label, field.decode()])
+        h_line_short = "-------"
+        h_line_long = "--------------"
+        prn_tbl(["Address", "Field\t", "Value"])
+        prn_tbl([h_line_short, h_line_long, h_line_short])
+        for field in self.fields.values():
+            if isinstance(field.value, list):
+                prn_tbl([field.address, field.label, "[See Below]"])
+                for subField in field.value:
+                    prn_tbl([f"^{subField.address}", subField.label, subField.value])
+            else:
+                prn_tbl([field.address, field.label, field.value])
 
 class HeaderField():
     # init method or constructor
@@ -202,6 +216,9 @@ class HeaderField():
         except UnicodeDecodeError as e:
             raise TypeError("Decoder Failed to decode value")
 
+    def __repr__(self):
+        return f"<HeaderField object:'{self.label}'>"
+
     def setDecoder(self, funct):
         self.decoder = funct
 
@@ -216,6 +233,7 @@ for offs,value in OFFSET_DICTIONARY.items():
     p_msg(f"\nLooking for {value['l']} (Mode: {value['flag']}) header at offset {hex(offs)}:")
     try:
         header = FileHeader(fname,offs)
+        header.printFields()
     except (TypeError, IndexError) as e:
         p_msg(f"\tError for {hex(offs)}\n\t{e}")
     
