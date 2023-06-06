@@ -22,10 +22,87 @@ SPEED_MODES = {
 }
 
 OFFSET_DICTIONARY = {
-   0x_7F_B0: {"flag": 0, "l": "LoRom"},
-   0x_FF_B0: {"flag": 1, "l": "HiRom"},
-   0x_40_FF_B0: {"flag": 5, "l": "ExHiRom"}
+   0x_7F_B0: {"flag": 0, "l": "LoROM"},
+   0x_FF_B0: {"flag": 1, "l": "HiROM"},
+   0x_40_FF_B0: {"flag": 5, "l": "ExHiROM"}
 }
+
+
+def decodeByteAsInt(self):
+    return ord(self.rawData)
+
+def decodeByMap(val, map):
+    # print(f"val/map:{0x00 == 0}/[{map}]")
+    result = 'Unknown' 
+    try:
+        result = map[val]
+    except:
+        pass
+    return result
+
+#$00 - Japan; #$01 - USA; #$02 - Europe (enables 50fps PAL mode)
+COUNTRY_DICTIONARY = {
+    0x00 : 'Japan',  #0x00
+    0x01 : 'USA',    #0x01
+    0x02 : 'Europe'  #0x02
+}
+def decodeCountryCode(self):
+    return decodeByMap(ord(self.rawData), COUNTRY_DICTIONARY)
+
+# The expanded header's presence is indicate by putting $33 in $00FFDA, which is the developer ID. 
+# Some early games may indicate just $00FFBF by setting $00FFD4 to zero.
+# - https://snes.nesdev.org/wiki/ROM_header#Header_Verification
+EXTENDED_HEADER_FLAG = 0x33
+def decodeExHeaderFlag(self):
+    hasExHeader = ord(self.rawData)
+    return (hasExHeader == EXTENDED_HEADER_FLAG)
+
+PASSFAIL_DICTIONARY = {
+    True : '✔ - pass',
+    False : '✖ - FAIL' 
+}
+def decodeFixedByte(self, fixedValue):
+    return decodeByMap((ord(self.rawData) == fixedValue), PASSFAIL_DICTIONARY)
+
+# Chipset subtype, used if chipset is $F0-$FF
+# $00 - SPC7110, $01 - ST010/ST011, $02 - ST018, $03 - CX4
+CHIP_SUBTYPE_DICTIONARY = {
+    0x00 : 'SPC7110',
+    0x01 : 'ST010/ST011',
+    0x02 : 'ST018',
+    0x03 : 'CX4'
+}
+def decodeSubHardware(self):
+    return decodeByMap(ord(self.rawData), CHIP_SUBTYPE_DICTIONARY)
+
+
+def decodeHardware(self):
+    rawHW = self.rawData
+
+    coprocessor = None
+    hardware = None
+
+    for b in rawHW:
+        coprocessor = b >> 4
+        hardware =  b & 0x0F
+
+    hwLabel, cpLabel = None, None
+    hwLabels = ["ROM"]
+    if hardware in [1, 2, 4, 5]: hwLabels.append("RAM")
+    if hardware in [2, 5, 6]: hwLabels.append("Battery")
+    if hardware > 3: hwLabels.append("Co-Processor")
+    
+    hwLabel = ", ".join(hwLabels)
+
+    result = [HeaderField("Hardware Flags",f"[3:0]",hardware,lambda self : hwLabel)]
+    if hardware > 3:
+        result.append(HeaderField("Co-Processor",f"[7:4]",coprocessor,lambda self : cpLabel))
+
+    return result
+
+
+def decodeByteAsKBSize(self):
+    return f"{pow(2, ord(self.rawData))}kb"
 
 def decodeMapSpeed(self):
     # print(f"Map/Speed - {}")
@@ -37,49 +114,70 @@ def decodeMapSpeed(self):
 
     for b in rawData:
         speedBit = (b >> 3) & 1
+        exBit = (b >> 2) & 1
+        specialROMBit = (b >> 1)  & 1
+        hiBit = (b >> 0) & 1
         mapModeNibble = b & 0x0F
+
+    if exBit == True and hiBit != True:
+        raise ValueError("Invalid ROM - loRom mode cannot have extended hiRom mode enabled")
     
     modeLabel = "Unknown"
+    # prn_tbl([hiBit, exBit, hiBit*pow(2,0), exBit*pow(2,2), (hiBit*pow(2,0)) + (exBit*pow(2,2))])
     for mm in OFFSET_DICTIONARY.values():
-        if mm['flag'] ==  mapModeNibble:
+        if mm['flag'] == (hiBit*pow(2,0) + exBit*pow(2,2)):
             modeLabel = mm['l']
             break
 
     speedLabel = SPEED_MODES[speedBit]['l']
 
-    return [
+    result = [
         HeaderField("Speed Flag",f"[4]",speedBit,lambda self : modeLabel ),
-        HeaderField("Map Mode",f"[3:0]",mapModeNibble,lambda self : speedLabel)
+        HeaderField("Map Mode",f"[3:0]",(hiBit*pow(2,0) + exBit*pow(2,2)),lambda self : speedLabel)
     ]
+
+    if specialROMBit:
+        specialLabel = None
+        if hiBit:
+            if exBit:
+                specialLabel = "Unknown ROM"
+            else:
+                specialLabel = "SA-1 ROM"
+        else:
+            specialLabel = "SDD-1 ROM"
+
+        result.append(HeaderField("Special ROM",f"[3:0]",mapModeNibble,lambda self : specialLabel))
+
+    return result
 
 
 HEADER_OFFSET = [0x_7F_B0]
 HEADER_FIELDS = [
     ("Maker Code", 2, "ascii"), 
     ("Game Code", 4, "ascii"), 
-    ("Fixed Byte1", 1, "hex"), 
-    ("Fixed Byte2", 1, "hex"), 
-    ("Fixed Byte3", 1, "hex"), 
-    ("Fixed Byte4", 1, "hex"), 
-    ("Fixed Byte5", 1, "hex"), 
-    ("Fixed Byte6", 1, "hex"), 
-    ("Fixed Byte7", 1, "hex"), 
-    ("Expansion RAM", 1, "hex"), 
+    ("Fixed Byte[0]", 1, lambda self : decodeFixedByte(self,0x00)), 
+    ("Fixed Byte[1]", 1, lambda self : decodeFixedByte(self,0x00)), 
+    ("Fixed Byte[2]", 1, lambda self : decodeFixedByte(self,0x00)), 
+    ("Fixed Byte[3]", 1, lambda self : decodeFixedByte(self,0x00)), 
+    ("Fixed Byte[4]", 1, lambda self : decodeFixedByte(self,0x00)), 
+    ("Fixed Byte[5]", 1, lambda self : decodeFixedByte(self,0x00)), 
+    ("ExFlash Size", 1, decodeByteAsKBSize), 
+    ("ExRAM Size", 1, decodeByteAsKBSize), 
     ("Special Version", 1, "hex"), 
-    ("Cart SubType", 1, "hex"), 
+    ("Cart SubType", 1, decodeSubHardware), 
     ("Game title", 21, "jisx0201"), 
     ("Map/Speed", 1, decodeMapSpeed), 
-    ("Cartridge type", 1, "hex"), 
-    ("ROM size", 1, "hex"), 
-    ("RAM size", 1, "hex"), 
-    ("Country Code", 1, "hex"), 
-    ("Fixed Byte", 1, "hex"), 
-    ("ROM version", 1, "hex"),
+    ("Hardware", 1, decodeHardware), 
+    ("ROM Size", 1, decodeByteAsKBSize), 
+    ("RAM Size", 1, decodeByteAsKBSize), 
+    ("Country Code", 1, decodeCountryCode), 
+    ("Has ExHeader", 1, decodeExHeaderFlag), 
+    ("ROM version", 1, lambda self : f"v{decodeByteAsInt(self)}.0"),
     ("Complement", 2, "int"), 
     ("Check Sum", 2, "int") 
 ]
 F_SIZE_M = 1024 # File size modulo to check for copier header
-H2_SIZE = 512 # Copier header size in bytes
+COPIER_HEADER_SIZE = 512 # Copier header size in bytes
 C_OFFS = 0x_1C # Checksum offset in header
 CC_OFFS = 0x_1E # Checksum complement offset in header
 MAP_MODE_OFFSET = 0x_15 # Map mode offset in header
@@ -128,9 +226,10 @@ rom_file = open(fname,"rb")
 
 # Get and adjust the file size in bytes if needed
 f_size = rom_file.seek(0,2)
-if f_size % F_SIZE_M == H2_SIZE: # If there is a copier header
+hasCopierHeader = f_size % F_SIZE_M == COPIER_HEADER_SIZE
+if hasCopierHeader:
    p_msg("The ROM file has a copier header.")
-   f_size -= H2_SIZE # Subtract its size from the file size
+#    f_size -= COPIER_HEADER_SIZE # Subtract its size from the file size
 
 # Define a map of memory_map to checksum function
 cs_map = {
@@ -147,10 +246,6 @@ class FileHeader():
     def __init__(self, filename, offset):
         f = open(filename,"rb")
         f_size = f.seek(0,2)
-        if f_size % F_SIZE_M == H2_SIZE: # If there is a copier header
-            p_msg("The ROM file has a copier header.")
-
-        f_size -= H2_SIZE # Subtract its size from the file size
         
         if offset > f_size: # If the offset is within bounds 
             message = "Byte offset is outside memory of filename.\n"
@@ -172,18 +267,32 @@ class FileHeader():
 
         f.close()
 
-    def printFields(self):
+    def printFields(self, raw=True):
         h_line_short = "-------"
         h_line_long = "--------------"
-        prn_tbl(["Address", "Field\t", "Value"])
-        prn_tbl([h_line_short, h_line_long, h_line_short])
+        header_A = ["Address", "Field\t", "Value"]
+        header_B = [h_line_short, h_line_long, h_line_short]
+        if raw:
+            header_A.insert("RawBytes", 2)
+            header_B.insert(h_line_short, 2)
+        prn_tbl(header_A)
+        prn_tbl(header_B)
+
         for field in self.fields.values():
-            if isinstance(field.value, list):
-                prn_tbl([field.address, field.label, "[See Below]"])
-                for subField in field.value:
-                    prn_tbl([f"^{subField.address}", subField.label, subField.value])
+            fieldData = [field.address, field.label]
+            if raw:
+                fieldData.append(field.rawData)
+            if isinstance(field.value(), list):
+                fieldData.append("...See Sub-Byte Fields On Next Lines")
+                prn_tbl(fieldData)
+                for subField in field.value():
+                    subFieldData = [f"^{subField.address}", subField.label, subField.value()]
+                    if raw:
+                        subFieldData.insert(subField.rawData, 2)
+                    prn_tbl(subFieldData)
             else:
-                prn_tbl([field.address, field.label, field.value])
+                fieldData.append(field.value())
+                prn_tbl(fieldData)
 
 class HeaderField():
     # init method or constructor
@@ -196,7 +305,7 @@ class HeaderField():
             self.decoder = enc
         else:
             self.encoding = enc
-        self.value = None
+        # self.value = None
 
         if self.encoding == "ascii": 
             self.decoder = lambda self : self.rawData.decode("ascii") 
@@ -211,10 +320,10 @@ class HeaderField():
         elif self.encoding != "user":
             raise TypeError("Invalid Encoding") 
         
-        try:
-            self.value = self.decoder(self)
-        except UnicodeDecodeError as e:
-            raise TypeError("Decoder Failed to decode value")
+        # try:
+        #     self.value = self.decoder(self)
+        # except UnicodeDecodeError as e:
+        #     raise TypeError(f"Decoder Failed to decode value\n\tMsg:\t{e}")
 
     def __repr__(self):
         return f"<HeaderField object:'{self.label}'>"
@@ -222,20 +331,33 @@ class HeaderField():
     def setDecoder(self, funct):
         self.decoder = funct
 
-    def decode(self):
-        self.value = self.decoder()
-        return self.value
+    def value(self):
+        value = None
+        try:
+            value = self.decoder(self)
+        except UnicodeDecodeError as e:
+            raise TypeError(f"Decoder Failed to decode value\n\tMsg:\t{e}")
+        return value
 
     def export(self):
         return [self.address, self.label, self.decode()]
     
-for offs,value in OFFSET_DICTIONARY.items():
-    p_msg(f"\nLooking for {value['l']} (Mode: {value['flag']}) header at offset {hex(offs)}:")
+def tryOffsetMap(fname, offs):
+    header = None
     try:
         header = FileHeader(fname,offs)
-        header.printFields()
+        header.printFields(False)
     except (TypeError, IndexError) as e:
         p_msg(f"\tError for {hex(offs)}\n\t{e}")
+    return header
+
+for offs,value in OFFSET_DICTIONARY.items():
+    p_msg(f"\nLooking for {value['l']} (Mode: {value['flag']}) header at offset {hex(offs)}:")
+    header = tryOffsetMap(fname, offs)
+    if hasCopierHeader and header != None:
+        newOffset = offs+COPIER_HEADER_SIZE
+        p_msg(f"\nLooking for {value['l']} (Mode: {value['flag']}) header at offset {hex(newOffset)}:")
+        tryOffsetMap(fname, newOffset)
     
 exit()
 
