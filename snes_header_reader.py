@@ -24,29 +24,50 @@ OFFSET_DICTIONARY = {
    0x_40_FF_B0: {"flag": 5, "l": "ExHiRom"}
 }
 
+def decodeMapMode(self):
+    print(f"decodeMapMode")
+    rawData = self.rawData
+    speedBit = None
+    mapMode = 0
+    for b in rawData:
+        for i in range(8):
+            bit = (b >> i) & 1
+            print(f"bit{i}:{bit}")
+            if i == 4:
+                speedBit = bit
+            elif i < 4:
+                mapMode = mapMode << bit
+    return "decodeMapMode"
+
+DECODE_FUNCTIONS= {
+    "Map mode": decodeMapMode
+}
+
+
+
 HEADER_OFFSET = [0x_7F_B0]
 HEADER_FIELDS = [
     ("Maker Code", 2, "ascii"), 
     ("Game Code", 4, "ascii"), 
-    ("Fixed Byte", 1, "hex"), 
-    ("Fixed Byte", 1, "hex"), 
-    ("Fixed Byte", 1, "hex"), 
-    ("Fixed Byte", 1, "hex"), 
-    ("Fixed Byte", 1, "hex"), 
-    ("Fixed Byte", 1, "hex"), 
-    ("Fixed Byte?", 1, "hex"), 
-    ("Expansion RAM Size", 1, "hex"), 
+    ("Fixed Byte1", 1, "hex"), 
+    ("Fixed Byte2", 1, "hex"), 
+    ("Fixed Byte3", 1, "hex"), 
+    ("Fixed Byte4", 1, "hex"), 
+    ("Fixed Byte5", 1, "hex"), 
+    ("Fixed Byte6", 1, "hex"), 
+    ("Fixed Byte7", 1, "hex"), 
+    ("Expansion RAM", 1, "hex"), 
     ("Special Version", 1, "hex"), 
-    ("Cartridge Type (Sub-number)", 1, "hex"), 
+    ("Cart SubType", 1, "hex"), 
     ("Game title", 21, "jisx0201"), 
-    ("Map mode", 1, "hex"), 
+    ("Map mode", 1, decodeMapMode), 
     ("Cartridge type", 1, "hex"), 
     ("ROM size", 1, "hex"), 
     ("RAM size", 1, "hex"), 
-    ("Country/Destination Code", 1, "hex"), 
+    ("Country Code", 1, "hex"), 
     ("Fixed Byte", 1, "hex"), 
-    ("ROM ver", 1, "hex"),
-    ("Complement Check", 2, "int"), 
+    ("ROM version", 1, "hex"),
+    ("Complement", 2, "int"), 
     ("Check Sum", 2, "int") 
 ]
 F_SIZE_M = 1024 # File size modulo to check for copier header
@@ -114,37 +135,91 @@ cs_map = {
  0x_54: sc.cs_spc7110, # Add this case for SPC7110 ROM files
 }
 
+class FileHeader():
+    def __init__(self, filename, offset):
+        f = open(filename,"rb")
+        f_size = f.seek(0,2)
+        if f_size % F_SIZE_M == H2_SIZE: # If there is a copier header
+            p_msg("The ROM file has a copier header.")
+
+        f_size -= H2_SIZE # Subtract its size from the file size
+        
+        if offset > f_size: # If the offset is within bounds 
+            message = "Byte offset is outside memory of filename.\n"
+            message += f"\tFile: {filename} (Size: {f_size})\n"
+            message += f"\tOffset: {offs}\n"
+            raise IndexError(message)
+
+        self.filename = filename
+        self.offset = offset
+        self.fields = []
+
+        f.seek(offset)
+        for name, size, enc in HEADER_FIELDS: # Loop through the header fields to read and print them 
+            start = f.tell()
+            data = f.read(size) # Read the data of the field 
+            aField = HeaderField(name, f"{hex(start)}:{hex(start+size-1)}", data, enc)
+            prn_tbl([f"{hex(start)}:{hex(start+size-1)}", name, aField.value])
+            self.fields.append(aField)
+
+        f.close()
+    
+    def readHeader():
+        pass
+
+    def printFields(self):
+        for field in self.fields:
+            prn_tbl([field.address, field.label, field.decode()])
+
 class HeaderField():
     # init method or constructor
-    def __init__(self, l, a, r, e):
+    def __init__(self, l, a, r, enc):
         self.label = l
         self.address = a
         self.rawData = r
-        self.encoding = e
-        self.decoder = None
+        if callable(enc):
+            self.encoding = "user"
+            self.decoder = enc
+        else:
+            self.encoding = enc
+        self.value = None
 
-        if enc == "ascii": 
-            self.decoder = lambda : self.rawData.decode("ascii") 
-        elif enc == "int" or enc == "u_short": 
-            self.decoder = lambda : hex(int.from_bytes(self.rawData, 'big')) 
-        elif enc == "hex" or enc == "byte": 
-            self.decoder = lambda : hex(ord(self.rawData)) # Convert to hex if needed 
-        elif enc == "jisx0201":
-            self.decoder = lambda : self.rawData.decode("shift_jis") # Convert to hex if needed 
-        elif enc == "latin1": 
-            self.decoder = lambda : self.rawData.decode("latin1") # Convert to hex if needed 
-        elif enc != "user":
+        if self.encoding == "ascii": 
+            self.decoder = lambda self : self.rawData.decode("ascii") 
+        elif self.encoding == "int" or self.encoding == "u_short": 
+            self.decoder = lambda self : hex(int.from_bytes(self.rawData, 'big')) 
+        elif self.encoding == "hex" or self.encoding == "byte": 
+            self.decoder = lambda self : hex(ord(self.rawData)) # Convert to hex if needed 
+        elif self.encoding == "jisx0201":
+            self.decoder = lambda self : self.rawData.decode("shift_jis") # Convert to hex if needed 
+        elif self.encoding == "latin1": 
+            self.decoder = lambda self : self.rawData.decode("latin1") # Convert to hex if needed 
+        elif self.encoding != "user":
             raise TypeError("Invalid Encoding") 
+        
+        try:
+            self.value = self.decoder(self)
+        except UnicodeDecodeError as e:
+            raise TypeError("Decoder Failed to decode value")
 
     def setDecoder(self, funct):
         self.decoder = funct
 
     def decode(self):
-        return self.decoder()
+        self.value = self.decoder()
+        return self.value
 
     def export(self):
         return [self.address, self.label, self.decode()]
-
+    
+for offs,value in OFFSET_DICTIONARY.items():
+    p_msg(f"\nLooking for {value['l']} (Mode: {value['flag']}) header at offset {hex(offs)}:")
+    try:
+        header = FileHeader(fname,offs)
+    except (TypeError, IndexError) as e:
+        p_msg(f"\tError for {hex(offs)}\n\t{e}")
+    
+exit()
 
 # Loop through the possible header offsets
 header_buffer = None
@@ -154,7 +229,7 @@ for offs in HEADER_OFFSET:
     header_buffer2 = []
     if offs < f_size: # If the offset is within bounds
         p_msg(f"Trying header at offset {hex(offs)}...")
-        cs = r_word(rom_file,offs+C_OFFS) # Read the checksum from the header
+        cs = r_word(rom_file,offs+C_OFFS) # Read the checkspyum from the header
         cs_cpl = r_word(rom_file,offs+CC_OFFS) # Read the checksum complement from the header
        
         map_mode = r_byte(rom_file,offs+MAP_MODE_OFFSET) & 0xF7 # Read and mask the map mode from the header
@@ -196,9 +271,16 @@ for offs in HEADER_OFFSET:
                             speedBit = bit
                         elif i < 4:
                             mapMode = mapMode << bit
+
+                def decodeMapNibble(offset_key):
+                    if OFFSET_DICTIONARY[offset_key]['flag'] == self.rawData:
+                        return OFFSET_DICTIONARY[offset_key]['l']
+                    else:
+                        return None
+
                 return [
                     HeaderField("Speed Flag",f"{hex(start)}@Bit:4", speedBit, lambda : SPEED_MODES[self.rawData]['l']),
-                    HeaderField("Map Mode Nibble",f"{hex(start)}@Bits:3-0", mapMode, lambda : SPEED_MODES[self.offset]['l'])
+                    HeaderField("Map Mode Nibble",f"{hex(start)}@Bits:3-0", mapMode, decodeMapNibble)
                 ]
             
             if name == "Map mode":
