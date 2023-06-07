@@ -132,8 +132,8 @@ def decodeMapSpeed(self):
     speedLabel = SPEED_MODES[speedBit]['l']
 
     result = [
-        HeaderField("Speed Flag",f"[4]",speedBit,lambda self : modeLabel ),
-        HeaderField("Map Mode",f"[3:0]",(hiBit*pow(2,0) + exBit*pow(2,2)),lambda self : speedLabel)
+        HeaderField("Speed Flag",f"[4]",speedBit,lambda self : speedLabel ),
+        HeaderField("Map Mode",f"[3:0]",(hiBit*pow(2,0) + exBit*pow(2,2)),lambda self : modeLabel)
     ]
 
     if specialROMBit:
@@ -174,7 +174,7 @@ HEADER_FIELDS = [
     ("Has ExHeader", 1, decodeExHeaderFlag), 
     ("ROM version", 1, lambda self : f"v{decodeByteAsInt(self)}.0"),
     ("Complement", 2, "int"), 
-    ("Check Sum", 2, "int") 
+    ("Checksum", 2, "int") 
 ]
 F_SIZE_M = 1024 # File size modulo to check for copier header
 COPIER_HEADER_SIZE = 512 # Copier header size in bytes
@@ -246,6 +246,8 @@ class FileHeader():
     def __init__(self, filename, offset):
         f = open(filename,"rb")
         f_size = f.seek(0,2)
+        self.copierHeader = None
+        f_size % F_SIZE_M == COPIER_HEADER_SIZE
         
         if offset > f_size: # If the offset is within bounds 
             message = "Byte offset is outside memory of filename.\n"
@@ -254,8 +256,22 @@ class FileHeader():
             raise IndexError(message)
 
         self.filename = filename
+
         self.offset = offset
+        mapOffset = None
+        if self.offset in OFFSET_DICTIONARY:
+            mapOffset = self.offset
+            if (f_size % F_SIZE_M == COPIER_HEADER_SIZE):
+                self.copierHeader = "Trailing"
+
+        if mapOffset == None and ((self.offset - COPIER_HEADER_SIZE) in OFFSET_DICTIONARY):
+            mapOffset = self.offset - COPIER_HEADER_SIZE
+            self.copierHeader = "Leading"
+
+        self.memoryMap = OFFSET_DICTIONARY[mapOffset]['l']
+
         self.fields = {}
+        self.valid = lambda : False
 
         f.seek(offset)
         for name, size, enc in HEADER_FIELDS: # Loop through the header fields to read and print them 
@@ -266,6 +282,49 @@ class FileHeader():
             self.fields[name] = aField
 
         f.close()
+
+    def decodeField(self, label):
+        return self.fields[label].value()
+    
+    def calculateCheckSum(self):
+        checksum = None
+        return checksum
+    
+    def validate(self):
+        #Check 00.01 - Does the map mode decoded (actual) match 
+        #              the map mode offset for (expected)
+        expectMapLabel = self.memoryMap
+        actualMapLabel = None
+        mapSpeedByte = self.decodeField("Map/Speed")
+        for sf in mapSpeedByte:
+            if sf.label == "Map Mode":
+                actualMapLabel = sf.value()
+                break
+
+        if actualMapLabel != expectMapLabel:
+            p_msg("  ➡  Map Mode: ✖")
+            p_msg(f"     Error: Invalid Map Mode [Actual, Expected] [{actualMapLabel}, {expectMapLabel}]")
+            self.valid = lambda : False
+            return self.valid()
+        p_msg("  ➡  Map Mode: ✔")
+        
+        if self.decodeField("Checksum") != self.calculateCheckSum():
+            p_msg("  ➡  Checksum: ✖")
+            p_msg(f"     Warning: Invalid CheckSum Mode [Actual, Expected] [{self.decodeField('Checksum')}, {self.calculateCheckSum()}]")
+            self.valid = lambda : False
+            return self.valid()
+        p_msg("  ➡  Checksum: ✔")
+        
+        self.valid = lambda : True
+        return self.valid()
+    
+    def makeDict(self):
+        if not self.valid():
+            raise ImportError("Data was imported, but not validated")
+        return {'0':"BOO"}
+
+    def printField(self, label, raw=True):
+        p_msg(f"{label} :{self.decodeField(label)}")
 
     def printFields(self, raw=True):
         h_line_short = "-------"
@@ -342,23 +401,34 @@ class HeaderField():
     def export(self):
         return [self.address, self.label, self.decode()]
     
-def tryOffsetMap(fname, offs):
+def fillBuffer(fname, offs):
     header = None
     try:
         header = FileHeader(fname,offs)
-        header.printFields(False)
     except (TypeError, IndexError) as e:
         p_msg(f"\tError for {hex(offs)}\n\t{e}")
     return header
 
 for offs,value in OFFSET_DICTIONARY.items():
     p_msg(f"\nLooking for {value['l']} (Mode: {value['flag']}) header at offset {hex(offs)}:")
-    header = tryOffsetMap(fname, offs)
-    if hasCopierHeader and header != None:
+    header = fillBuffer(fname, offs)
+    isValidHeader = (header != None)
+    if(isValidHeader):
+        isValidHeader = header.validate()
+
+    if hasCopierHeader and not (isValidHeader):
         newOffset = offs+COPIER_HEADER_SIZE
         p_msg(f"\nLooking for {value['l']} (Mode: {value['flag']}) header at offset {hex(newOffset)}:")
-        tryOffsetMap(fname, newOffset)
-    
+        header = fillBuffer(fname, newOffset)
+        isValidHeader = (header != None)
+        if(isValidHeader):
+            isValidHeader = header.validate()
+
+    if isValidHeader:
+        for key, value in header.makeDict().items():
+            prn_tbl([key, value])
+        break
+
 exit()
 
 # Loop through the possible header offsets
