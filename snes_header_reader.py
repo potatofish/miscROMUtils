@@ -288,7 +288,8 @@ class FileHeader():
     def decodeField(self, label):
         return self.fields[label].value()
     
-    def calculateCheckSum(self):
+    def calculateCheckSum(self, checkSumMethod='nesdev'):
+
         # Any number which is a power of two has exactly one bit set to 1. 
         # When you subtract 1 from it that bit flips to 0 & all preceding bits flip to 1
         def is_power_of_two(n):
@@ -308,35 +309,64 @@ class FileHeader():
             highest_bit = length.bit_length() - 1
             return pow(2,highest_bit)
         
-        def zeroPadData(num_zero_bytes, binary_data):
-            zero_bytes = b'\x00' * num_zero_bytes
-            print(f"{zero_bytes=}")
-            padded_data = binary_data + zero_bytes
-            return padded_data
 
-        def padData(binary_data):
-            firstROMChipLen = highest_bit_length(binary_data)
-            first_bytes = binary_data[:firstROMChipLen]
-            remaining_bytes = binary_data[firstROMChipLen:]
-            difference = len(binary_data) - firstROMChipLen
-            if not is_power_of_two(difference):
-                smallestPowerOfTwo = 2 ** difference.bit_length()
-                remaining_bytes = zeroPadData(smallestPowerOfTwo - difference, remaining_bytes)
-                paddedSecondROMLen = len(zeroPadded) - firstROMChipLen
-                if not is_power_of_two(paddedSecondROMLen):
-                    raise ValueError("Zero Padding Did not result in a filesize that is a power of 2")
-                p_msg(f"{firstROMChipLen=} | {smallestPowerOfTwo=} | {paddedSecondROMLen=}")
-            p_msg(f"{difference=}, {len(remaining_bytes)=}")
-            mirrored_bytes = remaining_bytes + remaining_bytes
-            p_msg(f"{firstROMChipLen=}, {len(mirrored_bytes)=}, {firstROMChipLen + len(mirrored_bytes)=}")
-            result = first_bytes + mirrored_bytes
-            if not is_power_of_two(len(result)):
-                raise ValueError("Resulting filesize is not a power of 2")
-            return result
+        
 
+        # padding_functions = {'nesdev': padPer_nesdev_org}
+        # def padData(binary_data, padding_type='nesdev'):
+        #     p_msg(f"{len(binary_data)=}")
+        #     paddedData = padding_functions[padding_type](binary_data)
+        #     if not is_power_of_two(len(paddedData)):
+        #         raise ValueError("Resulting filesize is not a power of 2")
+        #     return paddedData
+ 
+
+        def complexCheckSum(binary_data,checkSumMethod):
+            def split_chip_data(dataToCheck):
+                firstROMChipLen = highest_bit_length(dataToCheck)
+                first_bytes = dataToCheck[:firstROMChipLen]
+                remaining_bytes = dataToCheck[firstROMChipLen:]
+                return first_bytes, remaining_bytes
+            
+            def complexCheckSum_nesdev(binary_data):
+                def makeZeroPadding(num_zero_bytes):
+                    zero_bytes = b'\x00' * num_zero_bytes
+                    return zero_bytes
+
+                def makePaddedData(dataToPad):
+                    byteLen = len(dataToPad)
+                    if not is_power_of_two(byteLen):
+                        smallestPowerOfTwo = 2 ** byteLen.bit_length()
+                        dataToPad += makeZeroPadding(smallestPowerOfTwo - byteLen)
+                    return dataToPad
+                
+                first_bytes, second_bytes = split_chip_data(binary_data)
+                padded_second_byte = makePaddedData(second_bytes) 
+                checksum = check_data_sum(first_bytes + padded_second_byte + padded_second_byte) 
+                return checksum
+
+            def complexCheckSum_sneslab(binary_data):
+                first_bytes, remaining_bytes = split_chip_data(binary_data)
+                paddedData = None
+                subchipLen = len(first_bytes)//len(remaining_bytes)
+                p_msg(f"{len(first_bytes)=},{len(remaining_bytes)=},{subchipLen=}")
+                for i in range(subchipLen):
+                    if i == 0:
+                        paddedData = remaining_bytes
+                    else:
+                        paddedData += remaining_bytes
+                checksum = (check_data_sum(first_bytes) + check_data_sum(paddedData)) & 0xFFFF
+                return checksum
+
+            checksum_functions = {
+                'nesdev': complexCheckSum_nesdev, 
+                'sneslab': complexCheckSum_sneslab
+            }
+            return checksum_functions[checkSumMethod](binary_data)
         
         rom_data_offset = 0
         if self.copierHeader == "Leading":
+            p_msg("applying Leading Copier Header byte offset")
             rom_data_offset = COPIER_HEADER_SIZE
         
         
@@ -349,12 +379,11 @@ class FileHeader():
         checksum = None
         if is_power_of_two(f_size):
             p_msg(f"actual ROM Size is n^2: {dataLen=}")
-            check_data_sum(dataToCheck)
+            checksum = check_data_sum(dataToCheck)
         else:
             p_msg(f"actual ROM Size requires complex checksum: {dataLen=}")
-            paddedData = padData(dataToCheck)
-            check_data_sum(paddedData)
-        return checksum
+            checksum = complexCheckSum(dataToCheck, checkSumMethod)
+        return hex(checksum)
 
 
     
@@ -379,7 +408,14 @@ class FileHeader():
         actualChecksum = self.calculateCheckSum()
         if self.decodeField("Checksum") != actualChecksum:
             p_msg("  ➡  Checksum: ✖")
-            p_msg(f"     Warning: Invalid CheckSum [Actual, Expected] [{self.decodeField('Checksum')}, {actualChecksum}]")
+            p_msg(f"     Warning: Invalid CheckSum [Actual, Expected] [{actualChecksum}, {self.decodeField('Checksum')}]")
+        else:
+            p_msg("  ➡  Checksum: ✔")
+
+        actualChecksum2 = self.calculateCheckSum('sneslab')
+        if self.decodeField("Checksum") != actualChecksum2:
+            p_msg("  ➡  Checksum: ✖")
+            p_msg(f"     Warning: Invalid CheckSum [Actual, Expected] [{actualChecksum2}, {self.decodeField('Checksum')}]")
         else:
             p_msg("  ➡  Checksum: ✔")
         
