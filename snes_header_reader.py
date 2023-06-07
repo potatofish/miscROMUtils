@@ -1,6 +1,8 @@
 # Import sys module to get commandline arguments
 import sys
 
+import os
+
 # Import module to get Sequence object for validation
 import collections.abc
 
@@ -287,8 +289,74 @@ class FileHeader():
         return self.fields[label].value()
     
     def calculateCheckSum(self):
+        # Any number which is a power of two has exactly one bit set to 1. 
+        # When you subtract 1 from it that bit flips to 0 & all preceding bits flip to 1
+        def is_power_of_two(n):
+            return (n != 0) and (n & (n-1) == 0)
+        
+        def check_data_sum(binary_data):
+            summedData = 0
+            for i in range(0, len(binary_data), 2):
+                # Get the next two bytes as a little-endian 16-bit integer
+                value = int.from_bytes(binary_data[i:i+2], byteorder='little', signed=False)
+                # Add the value to the result and discard any overflow
+                summedData = (summedData + value) & 0xFFFF
+            return summedData
+        
+        def highest_bit_length(binary_data):
+            length = len(binary_data)
+            highest_bit = length.bit_length() - 1
+            return pow(2,highest_bit)
+        
+        def zeroPadData(num_zero_bytes, binary_data):
+            zero_bytes = b'\x00' * num_zero_bytes
+            print(f"{zero_bytes=}")
+            padded_data = binary_data + zero_bytes
+            return padded_data
+
+        def padData(binary_data):
+            firstROMChipLen = highest_bit_length(binary_data)
+            first_bytes = binary_data[:firstROMChipLen]
+            remaining_bytes = binary_data[firstROMChipLen:]
+            difference = len(binary_data) - firstROMChipLen
+            if not is_power_of_two(difference):
+                smallestPowerOfTwo = 2 ** difference.bit_length()
+                remaining_bytes = zeroPadData(smallestPowerOfTwo - difference, remaining_bytes)
+                paddedSecondROMLen = len(zeroPadded) - firstROMChipLen
+                if not is_power_of_two(paddedSecondROMLen):
+                    raise ValueError("Zero Padding Did not result in a filesize that is a power of 2")
+                p_msg(f"{firstROMChipLen=} | {smallestPowerOfTwo=} | {paddedSecondROMLen=}")
+            p_msg(f"{difference=}, {len(remaining_bytes)=}")
+            mirrored_bytes = remaining_bytes + remaining_bytes
+            p_msg(f"{firstROMChipLen=}, {len(mirrored_bytes)=}, {firstROMChipLen + len(mirrored_bytes)=}")
+            result = first_bytes + mirrored_bytes
+            if not is_power_of_two(len(result)):
+                raise ValueError("Resulting filesize is not a power of 2")
+            return result
+
+        
+        rom_data_offset = 0
+        if self.copierHeader == "Leading":
+            rom_data_offset = COPIER_HEADER_SIZE
+        
+        
+        with open(self.filename, 'rb') as f:
+            f.seek(rom_data_offset, os.SEEK_SET)
+            dataToCheck = f.read()
+
+
+        dataLen = len(dataToCheck)
         checksum = None
+        if is_power_of_two(f_size):
+            p_msg(f"actual ROM Size is n^2: {dataLen=}")
+            check_data_sum(dataToCheck)
+        else:
+            p_msg(f"actual ROM Size requires complex checksum: {dataLen=}")
+            paddedData = padData(dataToCheck)
+            check_data_sum(paddedData)
         return checksum
+
+
     
     def validate(self):
         #Check 00.01 - Does the map mode decoded (actual) match 
@@ -308,12 +376,12 @@ class FileHeader():
             return self.valid()
         p_msg("  ➡  Map Mode: ✔")
         
-        if self.decodeField("Checksum") != self.calculateCheckSum():
+        actualChecksum = self.calculateCheckSum()
+        if self.decodeField("Checksum") != actualChecksum:
             p_msg("  ➡  Checksum: ✖")
-            p_msg(f"     Warning: Invalid CheckSum Mode [Actual, Expected] [{self.decodeField('Checksum')}, {self.calculateCheckSum()}]")
-            self.valid = lambda : False
-            return self.valid()
-        p_msg("  ➡  Checksum: ✔")
+            p_msg(f"     Warning: Invalid CheckSum [Actual, Expected] [{self.decodeField('Checksum')}, {actualChecksum}]")
+        else:
+            p_msg("  ➡  Checksum: ✔")
         
         self.valid = lambda : True
         return self.valid()
@@ -425,6 +493,7 @@ for offs,value in OFFSET_DICTIONARY.items():
             isValidHeader = header.validate()
 
     if isValidHeader:
+        p_msg("\nValid Header Found\n--- PRINTING ---")
         for key, value in header.makeDict().items():
             prn_tbl([key, value])
         break
