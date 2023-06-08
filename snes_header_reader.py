@@ -9,7 +9,10 @@ import collections.abc
 # Import snes_checksum module to use checksum functions
 import snes_checksum as sc
 
+import snes_checksum_b as sc_b
+
 # Define some constants
+MAX_UNSIGNED_16BIT_INT = 0xFFFF
 H_SIZE = 64 # Header size in bytes
 loROM_OFFSET = 0x_7F_C0
 H_OFFS = [
@@ -296,7 +299,6 @@ class FileHeader():
             return (n != 0) and (n & (n-1) == 0)
 
         # Define named constants
-        MAX_UNSIGNED_16BIT_INT = 0xFFFF
         VALID_ENDIANNESS = ['big', 'little']
         
         def check_parameter(name, type, value, check_function=None):
@@ -358,14 +360,14 @@ class FileHeader():
             ones_complement = ~sum_of_bytes & MAX_UNSIGNED_16BIT_INT
             return sum_of_bytes, ones_complement
         
-        def calcCheckSum(binary_to_sum, mode='check_sum_of_binary'):
+        def calc_16bit_checksum(binary_to_sum, mode='check_sum_of_binary'):
             mode_to_function = {
                 'check_data_sum': check_data_sum,
                 'check_sum_of_binary': check_sum_of_binary
             }
             if mode in mode_to_function:
                 checkSum, complement = mode_to_function[mode](binary_to_sum)
-                p_msg(f"{hex(checkSum)=},{hex(complement)=}")
+                p_msg(f"{hex(checkSum)=},{hex(complement)=},{type(checkSum)}")
                 return checkSum
             raise ValueError('Invalid mode')
         
@@ -407,20 +409,20 @@ class FileHeader():
                 
                 first_bytes, second_bytes = split_chip_data(binary_data)
                 padded_second_byte = makePaddedData(second_bytes) 
-                checksum = calcCheckSum(first_bytes + padded_second_byte + padded_second_byte) 
+                checksum = calc_16bit_checksum(first_bytes + padded_second_byte + padded_second_byte) 
                 return checksum
 
             def complexCheckSum_sneslab(binary_data):
                 first_bytes, remaining_bytes = split_chip_data(binary_data)
                 paddedData = None
                 subchipLen = len(first_bytes)//len(remaining_bytes)
-                p_msg(f"{len(first_bytes)=},{len(remaining_bytes)=},{subchipLen=}")
+                # p_msg(f"{len(first_bytes)=},{len(remaining_bytes)=},{subchipLen=}")
                 for i in range(subchipLen):
                     if i == 0:
                         paddedData = remaining_bytes
                     else:
                         paddedData += remaining_bytes
-                checksum = (calcCheckSum(first_bytes) + calcCheckSum(paddedData)) & 0xFFFF
+                checksum = (calc_16bit_checksum(first_bytes) + calc_16bit_checksum(paddedData)) & 0xFFFF
                 return checksum
 
             checksum_functions = {
@@ -442,12 +444,12 @@ class FileHeader():
 
         dataLen = len(dataToCheck)
         checksum = None
-        if is_power_of_two(f_size):
+        if sc_b.is_power_of_two(f_size):
             p_msg(f"actual ROM Size is n^2: {dataLen=}")
-            checksum = calcCheckSum(dataToCheck)
+            checksum = sc_b.calc_16bit_checksum(dataToCheck)
         else:
             p_msg(f"actual ROM Size requires complex checksum: {dataLen=}")
-            checksum = complexCheckSum(dataToCheck, checkSumMethod)
+            checksum = sc_b.complexCheckSum(dataToCheck, checkSumMethod)
         return hex(checksum)
 
 
@@ -469,20 +471,34 @@ class FileHeader():
             self.valid = lambda : False
             return self.valid()
         p_msg("  ➡  Map Mode: ✔")
-        
-        actualChecksum = self.calculateCheckSum()
-        if self.decodeField("Checksum") != actualChecksum:
-            p_msg("  ➡  Checksum: ✖")
-            p_msg(f"     Warning: Invalid CheckSum [Actual, Expected] [{actualChecksum}, {self.decodeField('Checksum')}]")
-        else:
-            p_msg("  ➡  Checksum: ✔")
 
-        actualChecksum2 = self.calculateCheckSum('sneslab')
-        if self.decodeField("Checksum") != actualChecksum2:
-            p_msg("  ➡  Checksum: ✖")
-            p_msg(f"     Warning: Invalid CheckSum [Actual, Expected] [{actualChecksum2}, {self.decodeField('Checksum')}]")
-        else:
-            p_msg("  ➡  Checksum: ✔")
+        def validate_checksum(self, mode='nesdev'):
+            actualChecksum = self.calculateCheckSum(mode)
+            expectedChecksum = self.decodeField("Checksum")
+            if expectedChecksum != actualChecksum:
+                p_msg(f"  ➡  Checksum ({mode}): ✖")
+                p_msg(f"     Warning: Invalid CheckSum [Actual, Expected] [{actualChecksum}, {expectedChecksum}]")
+            else:
+                p_msg(f"  ➡  Checksum ({mode}): ✔\t[{actualChecksum}:{type(actualChecksum)}]")
+                expectedComplement = self.decodeField("Complement")
+                actualComplement = ~hex(int(actualChecksum,16) & MAX_UNSIGNED_16BIT_INT)
+                if expectedComplement != actualComplement:
+                    p_msg(f"  ➡  Complement ({mode}): ✖")
+                    p_msg(f"     Warning: Invalid Complement [Actual, Expected] [{actualComplement}, {expectedComplement}]")
+                else:
+                    p_msg(f"  ➡  Complement: ✔\t[{actualComplement}]")
+        
+        validate_checksum(self, 'nesdev')
+        validate_checksum(self, 'sneslab')
+
+
+
+        # actualChecksum2 = self.calculateCheckSum('sneslab')
+        # if self.decodeField("Checksum") != actualChecksum2:
+        #     p_msg("  ➡  Checksum (sneslab): ✖")
+        #     p_msg(f"     Warning: Invalid CheckSum [Actual, Expected] [{actualChecksum2}, {self.decodeField('Checksum')}]")
+        # else:
+        #     p_msg("  ➡  Checksum: ✔")
         
         self.valid = lambda : True
         return self.valid()
