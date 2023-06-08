@@ -294,15 +294,80 @@ class FileHeader():
         # When you subtract 1 from it that bit flips to 0 & all preceding bits flip to 1
         def is_power_of_two(n):
             return (n != 0) and (n & (n-1) == 0)
+
+        # Define named constants
+        MAX_UNSIGNED_16BIT_INT = 0xFFFF
+        VALID_ENDIANNESS = ['big', 'little']
         
-        def check_data_sum(binary_data):
-            summedData = 0
-            for i in range(0, len(binary_data), 2):
+        def check_parameter(name, type, value, check_function=None):
+            type_check = isinstance(value, type)
+            if not type_check:
+                return False
+            
+            if check_function == None:
+                return True
+            
+            if not check_function(value):
+                raise ValueError(f'Invalid value for parameter {name} : {value[:20]}')
+
+        def check_sum_of_binary(binary_to_sum, endianness='little', byte_size=1, signed=False):
+            # Check parameters
+            check_parameter('binary_to_sum', bytes, binary_to_sum)
+            check_parameter('endianness', str, endianness, lambda end_val : end_val in VALID_ENDIANNESS)
+            check_parameter('byte_size', int, byte_size, lambda int_val : int_val > 0)
+            check_parameter('signed', bool, signed)
+            
+            # Check that the length of binary_to_sum is divisible by byte_size
+            if len(binary_to_sum) % byte_size != 0:
+                raise ValueError(f'Invalid value for parameter {binary_to_sum} : {binary_to_sum[:20]}')
+            
+            # Initialize the sum of bytes to 0
+            sum_of_bytes = 0
+            
+            # Iterate over the binary data in steps of byte_size
+            for i in range(0, len(binary_to_sum), byte_size):
+                # Get the next byte_size bytes
+                current_bytes = binary_to_sum[i:i+byte_size]
+                
+                # Interpret the current bytes as an integer
+                current_value = int.from_bytes(current_bytes,
+                                            byteorder=endianness,
+                                            signed=signed)
+                
+                # Add the current value to the sum of bytes and discard any overflow
+                sum_of_bytes = (sum_of_bytes + current_value) & MAX_UNSIGNED_16BIT_INT
+            
+            # Calculate the one's complement of the sum of bytes
+            ones_complement = ~sum_of_bytes & MAX_UNSIGNED_16BIT_INT
+            
+            # Return both the sum of bytes and its one's complement
+            return sum_of_bytes, ones_complement
+
+        
+        def check_data_sum(binary_to_sum):
+            sum_of_bytes = 0
+            for i in range(0, len(binary_to_sum), 2):
                 # Get the next two bytes as a little-endian 16-bit integer
-                value = int.from_bytes(binary_data[i:i+2], byteorder='little', signed=False)
+                value = int.from_bytes(binary_to_sum[i:i+2], byteorder='little', signed=False)
+                # value = int.from_bytes(binary_data[i:i+2], byteorder='little', signed=True)
+                # value = int.from_bytes(binary_data[i:i+2], byteorder='big', signed=False)
+                # value = int.from_bytes(binary_data[i:i+2], byteorder='big', signed=True)
                 # Add the value to the result and discard any overflow
-                summedData = (summedData + value) & 0xFFFF
-            return summedData
+                sum_of_bytes = (sum_of_bytes + value) & MAX_UNSIGNED_16BIT_INT
+            
+            ones_complement = ~sum_of_bytes & MAX_UNSIGNED_16BIT_INT
+            return sum_of_bytes, ones_complement
+        
+        def calcCheckSum(binary_to_sum, mode='check_sum_of_binary'):
+            mode_to_function = {
+                'check_data_sum': check_data_sum,
+                'check_sum_of_binary': check_sum_of_binary
+            }
+            if mode in mode_to_function:
+                checkSum, complement = mode_to_function[mode](binary_to_sum)
+                p_msg(f"{hex(checkSum)=},{hex(complement)=}")
+                return checkSum
+            raise ValueError('Invalid mode')
         
         def highest_bit_length(binary_data):
             length = len(binary_data)
@@ -342,7 +407,7 @@ class FileHeader():
                 
                 first_bytes, second_bytes = split_chip_data(binary_data)
                 padded_second_byte = makePaddedData(second_bytes) 
-                checksum = check_data_sum(first_bytes + padded_second_byte + padded_second_byte) 
+                checksum = calcCheckSum(first_bytes + padded_second_byte + padded_second_byte) 
                 return checksum
 
             def complexCheckSum_sneslab(binary_data):
@@ -355,7 +420,7 @@ class FileHeader():
                         paddedData = remaining_bytes
                     else:
                         paddedData += remaining_bytes
-                checksum = (check_data_sum(first_bytes) + check_data_sum(paddedData)) & 0xFFFF
+                checksum = (calcCheckSum(first_bytes) + calcCheckSum(paddedData)) & 0xFFFF
                 return checksum
 
             checksum_functions = {
@@ -379,7 +444,7 @@ class FileHeader():
         checksum = None
         if is_power_of_two(f_size):
             p_msg(f"actual ROM Size is n^2: {dataLen=}")
-            checksum = check_data_sum(dataToCheck)
+            checksum = calcCheckSum(dataToCheck)
         else:
             p_msg(f"actual ROM Size requires complex checksum: {dataLen=}")
             checksum = complexCheckSum(dataToCheck, checkSumMethod)
@@ -473,7 +538,7 @@ class HeaderField():
         if self.encoding == "ascii": 
             self.decoder = lambda self : self.rawData.decode("ascii") 
         elif self.encoding == "int" or self.encoding == "u_short": 
-            self.decoder = lambda self : hex(int.from_bytes(self.rawData, 'big')) 
+            self.decoder = lambda self : hex(int.from_bytes(self.rawData, 'little')) 
         elif self.encoding == "hex" or self.encoding == "byte": 
             self.decoder = lambda self : hex(ord(self.rawData)) # Convert to hex if needed 
         elif self.encoding == "jisx0201":
