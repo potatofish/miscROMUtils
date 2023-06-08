@@ -120,6 +120,6 @@ def calc_16bit_checksum(binary_to_sum, mode='check_sum_of_binary'):
     }
     if mode in mode_to_function:
         checkSum, complement = mode_to_function[mode](binary_to_sum)
-        print(f"{hex(checkSum)=},{hex(complement)=},{type(checkSum)}")
+        # print(f"{hex(checkSum)=},{hex(complement)=},{type(checkSum)}")
         return checkSum
     raise ValueError('Invalid mode')

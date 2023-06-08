@@ -234,18 +234,6 @@ f_size = rom_file.seek(0,2)
 hasCopierHeader = f_size % F_SIZE_M == COPIER_HEADER_SIZE
 if hasCopierHeader:
    p_msg("The ROM file has a copier header.")
-#    f_size -= COPIER_HEADER_SIZE # Subtract its size from the file size
-
-# Define a map of memory_map to checksum function
-cs_map = {
- 0x_20: sc.cs_lorom,
- 0x_21: sc.cs_hirom,
- 0x_23: sc.cs_sa1,
- 0x_25: sc.cs_exhirom,
- 0x_32: sc.cs_sdd1,
- 0x_34: sc.cs_superfx,
- 0x_54: sc.cs_spc7110, # Add this case for SPC7110 ROM files
-}
 
 class FileHeader():
     def __init__(self, filename, offset):
@@ -306,59 +294,70 @@ class FileHeader():
         dataLen = len(dataToCheck)
         checksum = None
         if sc_b.is_power_of_two(f_size):
-            p_msg(f"actual ROM Size is n^2: {dataLen=}")
+            # p_msg(f"actual ROM Size is n^2: {dataLen=}")
             checksum = sc_b.calc_16bit_checksum(dataToCheck)
         else:
-            p_msg(f"actual ROM Size requires complex checksum: {dataLen=}")
+            # p_msg(f"actual ROM Size requires complex checksum: {dataLen=}")
             checksum = sc_b.calc_complex_checksum(dataToCheck, checkSumMethod)
         return hex(checksum)
     
     def validate(self):
-        #Check 00.01 - Does the map mode decoded (actual) match 
-        #              the map mode offset for (expected)
+        def compare_actual_to_expected(field_label, actual, expected, warn_only=False):
+            comp_result = actual == expected
+            error_label = "Error"
+            if warn_only:
+                error_label = "Warning"
+
+            if not comp_result:
+                p_msg(f"  ➡  {field_label}: ✖")
+                p_msg(f"     {error_label}: Invalid {field_label} [Actual, Expected] [{actual}, {expected}]")
+                if not warn_only:
+                    self.valid = lambda : False
+            else:
+                p_msg(f"  ➡  {field_label}: ✔\t[{actual}:{type(actual)}]")
+            return comp_result
+
+        VALIDATION_FIELDS = {
+            'MAP_MODE': {'LABEL':"Map Mode"},
+            'CHECKSUM' : {'LABEL': "Checksum"},
+            'COMPLEMENT' : {'LABEL' : "Complement"}
+        }
+
+        #Check 01 - Does the memory map stored at initialization, based on offset (actual) 
+        #           match the memory map read from the file (excepted)
         expectMapLabel = self.memoryMap
         actualMapLabel = None
         mapSpeedByte = self.decodeField("Map/Speed")
+ 
         for sf in mapSpeedByte:
-            if sf.label == "Map Mode":
+            if sf.label == VALIDATION_FIELDS['MAP_MODE']['LABEL']:
                 actualMapLabel = sf.value()
                 break
-
-        if actualMapLabel != expectMapLabel:
-            p_msg("  ➡  Map Mode: ✖")
-            p_msg(f"     Error: Invalid Map Mode [Actual, Expected] [{actualMapLabel}, {expectMapLabel}]")
-            self.valid = lambda : False
+        if not compare_actual_to_expected(VALIDATION_FIELDS['MAP_MODE']['LABEL'], actualMapLabel, expectMapLabel):
             return self.valid()
-        p_msg("  ➡  Map Mode: ✔")
 
-        def validate_checksum(self, mode='nesdev'):
-            actualChecksum = self.calculateCheckSum(mode)
-            expectedChecksum = self.decodeField("Checksum")
-            if expectedChecksum != actualChecksum:
-                p_msg(f"  ➡  Checksum ({mode}): ✖")
-                p_msg(f"     Warning: Invalid CheckSum [Actual, Expected] [{actualChecksum}, {expectedChecksum}]")
-            else:
-                p_msg(f"  ➡  Checksum ({mode}): ✔\t[{actualChecksum}:{type(actualChecksum)}]")
-                expectedComplement = self.decodeField("Complement")
-                actualComplement = ~hex(int(actualChecksum,16) & MAX_UNSIGNED_16BIT_INT)
-                if expectedComplement != actualComplement:
-                    p_msg(f"  ➡  Complement ({mode}): ✖")
-                    p_msg(f"     Warning: Invalid Complement [Actual, Expected] [{actualComplement}, {expectedComplement}]")
-                else:
-                    p_msg(f"  ➡  Complement: ✔\t[{actualComplement}]")
-        
-        validate_checksum(self, 'nesdev')
-        validate_checksum(self, 'sneslab')
+        #Check 02 - Do the checksum/complement calculated off file's bytes (actual) 
+        #           match the checksum/complement read from the file
+        for cs_mode in ['nesdev', 'sneslab']:
+            cs_label = VALIDATION_FIELDS['CHECKSUM']['LABEL']
+            cs_actual = self.calculateCheckSum(cs_mode)
+            cs_expected = self.decodeField(cs_label)
+            cs_result = compare_actual_to_expected(
+                f"{cs_label} ({cs_mode})", cs_actual, cs_expected, warn_only=True
+            )
+            
+            #TODO Remove all hex conversion from storing integers and comparing them for the checksums to be less gross
+            if cs_result:
+                complmt_label = VALIDATION_FIELDS['COMPLEMENT']['LABEL']
+                new_var = int(cs_actual,16)
+                # print(f"{new_var=}:{type(new_var)=};{cs_actual=}:{type(cs_actual)=}")
+                complmt_actual = ~new_var & MAX_UNSIGNED_16BIT_INT
+                complmt_expected = self.decodeField(complmt_label)
+                compare_actual_to_expected(
+                    f"{complmt_label} ({cs_mode})", hex(complmt_actual), complmt_expected, warn_only=True
+                )
 
 
-
-        # actualChecksum2 = self.calculateCheckSum('sneslab')
-        # if self.decodeField("Checksum") != actualChecksum2:
-        #     p_msg("  ➡  Checksum (sneslab): ✖")
-        #     p_msg(f"     Warning: Invalid CheckSum [Actual, Expected] [{actualChecksum2}, {self.decodeField('Checksum')}]")
-        # else:
-        #     p_msg("  ➡  Checksum: ✔")
-        
         self.valid = lambda : True
         return self.valid()
     
@@ -475,149 +474,3 @@ for offs,value in OFFSET_DICTIONARY.items():
         break
 
 exit()
-
-# Loop through the possible header offsets
-header_buffer = None
-header_buffer2 = None
-for offs in HEADER_OFFSET:
-    header_buffer = []
-    header_buffer2 = []
-    if offs < f_size: # If the offset is within bounds
-        p_msg(f"Trying header at offset {hex(offs)}...")
-        cs = r_word(rom_file,offs+C_OFFS) # Read the checkspyum from the header
-        cs_cpl = r_word(rom_file,offs+CC_OFFS) # Read the checksum complement from the header
-       
-        map_mode = r_byte(rom_file,offs+MAP_MODE_OFFSET) & 0xF7 # Read and mask the map mode from the header
-       
-        # cs_func = cs_map.get(map_mode) # Get the checksum function from the map
-       
-        # if cs_func: # If there is a matching function 
-        #    cs_calc = cs_func(rom_file,f_size) # Calculate the checksum of the ROM file 
-        # else: # Unknown map mode 
-        #     p_msg(f"Warning: Unknown map mode {hex(map_mode)}.") # Print the unknown map mode
-        #     cs_calc = 0 # Set the calculated checksum to zero
-
-        rom_file.seek(offs) # Seek to the offset of the header 
-        prn_tbl(["Memory Address", "Field", "Value"])
-
-        fieldTemplate = {
-            "l": None,
-            "address": None,
-            "rawData" : None,
-            "decoder" : None
-        }
-
-        for name, size, enc in HEADER_FIELDS: # Loop through the header fields to read and print them 
-            start = rom_file.tell()
-            data = rom_file.read(size) # Read the data of the field 
-            # if size == 1 and int.from_bytes(data, 'big') != 0:
-            # if name == "Map mode":
-            #    for b in data:
-            #       for i in range(8):
-            #         bit = (b >> i) & 1
-            def decodeMapMode(rawData):
-                speedBit = None
-                mapMode = 0
-                for b in rawData:
-                    for i in range(8):
-                        bit = (b >> i) & 1
-                        # print(f"bit{i}:{bit}")
-                        if i == 4:
-                            speedBit = bit
-                        elif i < 4:
-                            mapMode = mapMode << bit
-
-                def decodeMapNibble(offset_key):
-                    if OFFSET_DICTIONARY[offset_key]['flag'] == self.rawData:
-                        return OFFSET_DICTIONARY[offset_key]['l']
-                    else:
-                        return None
-
-                return [
-                    HeaderField("Speed Flag",f"{hex(start)}@Bit:4", speedBit, lambda : SPEED_MODES[self.rawData]['l']),
-                    HeaderField("Map Mode Nibble",f"{hex(start)}@Bits:3-0", mapMode, decodeMapNibble)
-                ]
-            
-            if name == "Map mode":
-                speedBit = None
-                mapMode = 0
-                for b in data:
-                    for i in range(8):
-                        bit = (b >> i) & 1
-                        # print(f"bit{i}:{bit}")
-                        if i == 4:
-                            speedBit = bit
-                        elif i < 4:
-                            mapMode = mapMode << bit
-
-            field = fieldTemplate
-            field["l"] = name
-            field['address'] = f"{hex(start)}:{hex(start+size-1)}"
-            field["rawData"] = data
-            field["decoder"] = lambda : None
-
-            field2 = HeaderField(name, f"{hex(start)}:{hex(start+size-1)}", data, enc)
-            header_buffer2.append(field2)
-
-            # if enc == "ascii": data = data.decode("ascii") # Decode as ASCII if needed 
-            # elif enc == "int": data = hex(int.from_bytes(data, 'big')) # Convert to hex if needed 
-            # elif enc == "hex": data = hex(ord(data)) # Convert to hex if needed 
-            # elif enc == "jisx0201": data.decode("shift_jis") # Convert to hex if needed 
-            # elif enc == "latin1": data.decode("latin1") # Convert to hex if needed 
-            if enc == "ascii": field["decoder"] = lambda : self["rawData"].decode("ascii") # Decode as ASCII if needed 
-            elif enc == "int": data = hex(int.from_bytes(data, 'big')) # Convert to hex if needed 
-            elif enc == "hex": data = hex(ord(data)) # Convert to hex if needed 
-            elif enc == "jisx0201": data.decode("shift_jis") # Convert to hex if needed 
-            elif enc == "latin1": data.decode("latin1") # Convert to hex if needed 
-            pfx = f"[{field['address']}]\t::" # print message prefix
-            pfx2 = f"[{hex(start)}:{hex(start+size-1)}]" # print message prefix
-            # p_msg(f"{pfx}\t{name}\t::\t{data}") # Print the name and data of the field 
-            header_buffer.append(field)
-            prn_tbl([pfx2, name, data])
-            
-            if name == "Map mode":
-                subFields = "->  speedBit"
-                subFieldsMapped = f"{SPEED_MODES[speedBit]['l']}"
-                subFieldsRaw = f"{speedBit}"
-                prn_tbl([" ↑[0x\"*\":0x\"*\"]", subFields, f"{subFieldsMapped} [{subFieldsRaw}]"])
-
-                subFields = "->  mapMode"
-                subFieldsMapped = f"{OFFSET_DICTIONARY[offs]['l']}"
-                subFieldsRaw = f"{mapMode}"
-                prn_tbl([" ↑[0x\"*\":0x\"*\"]", subFields,  f"{subFieldsMapped} [{subFieldsRaw}]"])
-
-                # p_msg(f"{pfx}\t\t ::\t \t::\t{speedBit}|{mapMode}")
-                if OFFSET_DICTIONARY[offs]['flag'] != mapMode:
-                    p_msg(f"{pfx}\tWARNING\t::\t{OFFSET_DICTIONARY[offs]['flag']} is expected mapMode") # Print the name and data of the field 
-                   
-        
-        # if cs == cs_calc and cs_cpl == (cs^0xFFFF): # If both match 
-        #     p_msg("Valid header!")
-        #     p_msg(f"Checksum: {hex(cs)}")
-        #     p_msg(f"Checksum complement: {hex(cs_cpl)}")
-        #     break # Break the loop 
-        # else:
-        #     p_msg("Warning: Invalid checksum or checksum complement.")
-        #     p_msg("Invalid header!")
-        #     p_msg(f"Checksum (expected vs actual): {hex(cs)} / {hex(cs_calc)} [{cs}/{cs_calc}]")
-        #     p_msg(f"Checksum complement (expected vs actual): {hex(cs_cpl)} / {hex(cs^0xFFFF)}")
-    else:
-        p_msg(f"Offset {hex(offs)} is out of bounds.")
-
-#print results
-for field in header_buffer2:
-    prn_tbl([field.address, field.label, field.decode()])
-
-    # print(f"XXX: {field.decode()}")
-    # if enc == "ascii": data = data.decode("ascii") # Decode as ASCII if needed 
-    # elif enc == "int": data = hex(int.from_bytes(data, 'big')) # Convert to hex if needed 
-    # elif enc == "hex": data = hex(ord(data)) # Convert to hex if needed 
-    # elif enc == "jisx0201": data.decode("shift_jis") # Convert to hex if needed 
-    # elif enc == "latin1": data.decode("latin1") # Convert to hex if needed 
-    # pfx = f"[{hex(start)}:{hex(start+size-1)}]\t::" # print message prefix
-    # pfx2 = f"[{hex(start)}:{hex(start+size-1)}]" # print message prefix
-    # # p_msg(f"{pfx}\t{name}\t::\t{data}") # Print the name and data of the field 
-    # prn_tbl([pfx2, name, data])
-
-#  Close the file
-rom_file.close()
