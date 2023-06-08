@@ -10,13 +10,13 @@ def highest_bit_length(binary_data):
 def is_power_of_two(n):
     return (n != 0) and (n & (n-1) == 0)
 
-def complexCheckSum(binary_data,checkSumMethod):
-    def split_chip_data(dataToCheck):
-        firstROMChipLen = highest_bit_length(dataToCheck)
-        first_bytes = dataToCheck[:firstROMChipLen]
-        remaining_bytes = dataToCheck[firstROMChipLen:]
-        return first_bytes, remaining_bytes
-    
+def split_chip_data(data_to_split):
+    firstROMChipLen = highest_bit_length(data_to_split)
+    first_bytes = data_to_split[:firstROMChipLen]
+    remaining_bytes = data_to_split[firstROMChipLen:]
+    return first_bytes, remaining_bytes
+
+def calc_complex_checksum(binary_data,checkSumMethod):
     def complexCheckSum_nesdev(binary_data):
         def makeZeroPadding(num_zero_bytes):
             zero_bytes = b'\x00' * num_zero_bytes
