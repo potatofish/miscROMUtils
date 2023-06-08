@@ -9,7 +9,7 @@ import collections.abc
 # Import snes_checksum module to use checksum functions
 import snes_checksum as sc
 
-import snes_checksum_b as sc_b
+# import snes_checksum_b as sc
 
 # Define some constants
 MAX_UNSIGNED_16BIT_INT = 0xFFFF
@@ -293,12 +293,12 @@ class FileHeader():
 
         dataLen = len(dataToCheck)
         checksum = None
-        if sc_b.is_power_of_two(f_size):
+        if sc.is_power_of_two(f_size):
             # p_msg(f"actual ROM Size is n^2: {dataLen=}")
-            checksum = sc_b.calc_16bit_checksum(dataToCheck)
+            checksum = sc.calc_16bit_checksum(dataToCheck)
         else:
             # p_msg(f"actual ROM Size requires complex checksum: {dataLen=}")
-            checksum = sc_b.calc_complex_checksum(dataToCheck, checkSumMethod)
+            checksum = sc.calc_complex_checksum(dataToCheck, checkSumMethod)
         return hex(checksum)
     
     def validate(self):
@@ -357,6 +357,7 @@ class FileHeader():
                     f"{complmt_label} ({cs_mode})", hex(complmt_actual), complmt_expected, warn_only=True
                 )
 
+        #Check 03.* - Confirm the validity of the extended header, if one is provided.
 
         self.valid = lambda : True
         return self.valid()
