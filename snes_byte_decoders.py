@@ -1,5 +1,5 @@
-from . import snes_constants as s_con
-from . import byte_decoders as bd
+import snes_constants as s_con
+import byte_decoders as bd
 
 def decodeMapSpeed(map_speed_byte):
     if(len(map_speed_byte) != 1):
@@ -41,4 +41,4 @@ def decodeMapSpeed(map_speed_byte):
     return map_mode_label, speed_label, special_rom_label
 
 DECODER_MAP = bd.DECODER_MAP
-DECODER_MAP += [s_con.LABEL_MAPSPEED , decodeMapSpeed]
+DECODER_MAP.update(dict([[s_con.LABEL_MAPSPEED, decodeMapSpeed]]))

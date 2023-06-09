@@ -1,4 +1,4 @@
-class FieldBuffer:
+class HeaderBuffer:
     def __init__(self, binary_data, fields):
         self.buffer = {}
         for fd in fields:

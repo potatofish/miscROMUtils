@@ -1,6 +1,29 @@
+import snes_constants as s_con
+import os
+
 # Define named constants
 VALID_ENDIANNESS = ['big', 'little']
 MAX_UNSIGNED_16BIT_INT = 0xFFFF
+
+def calculate_check_sum(f_name, copier_offset=False, mode='nesdev'):
+    rom_data_offset = 0
+    if copier_offset:
+        # print("applying Leading Copier Header byte offset")
+        rom_data_offset = s_con.COPIER_HEADER_SIZE
+    
+    with open(f_name, 'rb') as f:
+        f.seek(rom_data_offset, os.SEEK_SET)
+        f_binary_data = f.read() 
+
+        f.seek(0, os.SEEK_END)
+        f_size = f.tell()
+
+    checksum = None
+    if is_power_of_two(f_size):
+        checksum = calc_16bit_checksum(f_binary_data)
+    else:
+        checksum = calc_complex_checksum(f_binary_data, mode)
+    return checksum
 
 def highest_bit_length(binary_data):
     length = len(binary_data)
