@@ -40,5 +40,14 @@ def decodeMapSpeed(map_speed_byte):
                 special_rom_label = s_con.LABEL_ROM_SDD_1
     return map_mode_label, speed_label, special_rom_label
 
+def decode_ex_header_flag(flag_byte):
+    if len(flag_byte) != 1:
+        raise ImportError(f"flag_byte longer than expected (1). was {flag_byte}")
+    byte_decoder = bd.DECODER_MAP[bd.ENCODING_BYTE]
+    return byte_decoder(flag_byte) == s_con.VALUE_EX_HEADER_FLAG, byte_decoder(flag_byte)
+
 DECODER_MAP = bd.DECODER_MAP
-DECODER_MAP.update(dict([[s_con.LABEL_MAPSPEED, decodeMapSpeed]]))
+DECODER_MAP.update(dict([
+    [s_con.LABEL_MAPSPEED, decodeMapSpeed],
+    [s_con.LABEL_EX_HEADER_FLAG, decode_ex_header_flag]
+]))

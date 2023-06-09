@@ -10,7 +10,7 @@ def decode_two_byte_int(two_byte_int):
 DECODER_MAP = [
     [ENCODING_ASCII , lambda string_of_bytes : string_of_bytes.decode(ENCODING_ASCII)],
     [ENCODING_INT , decode_two_byte_int],
-    [ENCODING_BYTE , lambda raw_byte : ord(raw_byte, 'little')]
+    [ENCODING_BYTE , lambda raw_byte : int.from_bytes(raw_byte, 'little')]
 ]
 DECODER_MAP = dict(DECODER_MAP)
 

@@ -40,15 +40,60 @@ HEADER_OFFSETS = [
 ]
 HEADER_OFFSETS = dict(HEADER_OFFSETS)
 
+LABEL_DEV_ID = "Developer ID"
+LABEL_EX_HEADER_FLAG = LABEL_DEV_ID
+LABEL_PREFIX_EX_HEADER_RESERVED = "Fixed Byte"
+# LABELS_EX_HEADER_RESERVED = [
+#     "Fixed Byte[0]",
+#     "Fixed Byte[1]",
+#     "Fixed Byte[2]",
+#     "Fixed Byte[3]",
+#     "Fixed Byte[4]",
+#     "Fixed Byte[5]"
+# ]
+LABELS_EX_HEADER_RESERVED =[f"{LABEL_PREFIX_EX_HEADER_RESERVED}[{i}]" for i in range(6)]
+VALUE_EX_HEADER_RESERVED = 0x00
+VALUE_EX_HEADER_FLAG = 0x33
+
+# TODO make use of this HEADER_FIELDS + [(i, 1) for i in LABELS_EX_HEADER_RESERVED]
+# HEADER_FIELDS = [
+#     ("Maker Code", 2), 
+#     ("Game Code", 4), 
+#     ("Fixed Byte[0]", 1), 
+#     ("Fixed Byte[1]", 1), 
+#     ("Fixed Byte[2]", 1), 
+#     ("Fixed Byte[3]", 1), 
+#     ("Fixed Byte[4]", 1), 
+#     ("Fixed Byte[5]", 1), 
+#     ("ExFlash Size", 1), 
+#     ("ExRAM Size", 1), 
+#     ("Special Version", 1), 
+#     ("Cart SubType", 1), 
+#     ("Game title", 21), 
+#     (LABEL_MAPSPEED, 1), 
+#     ("Hardware", 1), 
+#     ("ROM Size", 1), 
+#     ("RAM Size", 1), 
+#     ("Country Code", 1), 
+#     (LABEL_DEV_ID, 1), 
+#     ("ROM version", 1),
+#     (LABEL_COMPLEMENT, 2),
+#     (LABEL_CHECKSUM, 2)
+# ]
+
 HEADER_FIELDS = [
     ("Maker Code", 2), 
-    ("Game Code", 4), 
-    ("Fixed Byte[0]", 1), 
-    ("Fixed Byte[1]", 1), 
-    ("Fixed Byte[2]", 1), 
-    ("Fixed Byte[3]", 1), 
-    ("Fixed Byte[4]", 1), 
-    ("Fixed Byte[5]", 1), 
+    ("Game Code", 4)
+]
+    # ("Fixed Byte[0]", 1), 
+    # ("Fixed Byte[1]", 1), 
+    # ("Fixed Byte[2]", 1), 
+    # ("Fixed Byte[3]", 1), 
+    # ("Fixed Byte[4]", 1), 
+    # ("Fixed Byte[5]", 1)
+HEADER_FIELDS.extend([(i, 1) for i in LABELS_EX_HEADER_RESERVED])
+
+HEADER_FIELDS.extend([
     ("ExFlash Size", 1), 
     ("ExRAM Size", 1), 
     ("Special Version", 1), 
@@ -59,8 +104,11 @@ HEADER_FIELDS = [
     ("ROM Size", 1), 
     ("RAM Size", 1), 
     ("Country Code", 1), 
-    ("Has ExHeader", 1), 
+    (LABEL_DEV_ID, 1), 
     ("ROM version", 1),
     (LABEL_COMPLEMENT, 2),
     (LABEL_CHECKSUM, 2)
-]
+])
+# nl = '\n'
+# for x in HEADER_FIELDS:
+#     print(f"{x}")

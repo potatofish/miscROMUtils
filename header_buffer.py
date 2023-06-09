@@ -5,4 +5,6 @@ class HeaderBuffer:
             self.buffer[fd.name] = binary_data[:fd.size]
             binary_data = binary_data[fd.size:]
 
-        
+    def print_raw(self):
+        for field,value in self.buffer.items():
+            print(f"{field}\t\t{hex(int.from_bytes(value,'little'))}")

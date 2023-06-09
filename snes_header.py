@@ -17,7 +17,9 @@ class SNESHeader:
                     f.seek(offs,os.SEEK_SET)
                     binary_data = f.read()
                     self.memory_map = mm
-                    self.buffer = HeaderBuffer(binary_data, fields).buffer
+                    hb = HeaderBuffer(binary_data, fields)
+                    # hb.print_raw()
+                    self.buffer = hb.buffer
                     self.valid = lambda : False
                     self.has_copier_header = raw_offs != offs #TODO try make function
                     self.validate()
@@ -44,21 +46,32 @@ class SNESHeader:
         #Check 02 - Do the checksum/1s-complement calculated off file's bytes (actual) 
         #           match the checksum/1s-complement read from the file
         int_decoder = s_bd.DECODER_MAP[bd.ENCODING_INT] #TODO - Re-add this to the Field list
+        byte_decoder = s_bd.DECODER_MAP[bd.ENCODING_BYTE] #TODO - Re-add this to the Field list
         for cs_mode in ['nesdev', 'sneslab']:
             cs_actual = s_cs.calculate_check_sum(self.file_name, self.has_copier_header, cs_mode)
             cs_bytes = self.buffer[s_con.LABEL_CHECKSUM]
             cs_expected = int_decoder(cs_bytes)
             cs_comp_label = f"{s_con.LABEL_CHECKSUM} ({cs_mode})"
-            cs_result = comp(cs_comp_label, cs_actual, cs_expected, warn_only=True)
+            cs_result = comp(cs_comp_label, cs_actual, cs_expected, warn_only=True, cb=hex)
             
             if cs_result:
                 oc_actual = ~cs_actual & s_cs.MAX_UNSIGNED_16BIT_INT 
                 oc_bytes = self.buffer[s_con.LABEL_COMPLEMENT]
                 oc_expected = int_decoder(oc_bytes)
                 oc_comp_label = f"{s_con.LABEL_COMPLEMENT} ({cs_mode})"
-                comp(oc_comp_label, oc_actual, oc_expected, warn_only=True)
+                comp(oc_comp_label, oc_actual, oc_expected, warn_only=True, cb=hex)
 
         #Check 03.* - Confirm the validity of the extended header, if one is provided.
+        ex_flag_byte = self.buffer[s_con.LABEL_EX_HEADER_FLAG]
+        ex_flag_decoder = s_bd.DECODER_MAP[s_con.LABEL_EX_HEADER_FLAG]
+        ex_flag_bool, ex_flag_act = ex_flag_decoder(ex_flag_byte)
+        comp("Has Ex Header?", ex_flag_bool,True, warn_only=True,cb=lambda x : hex(ex_flag_act))
+        if ex_flag_bool:
+            res_expected_byte = s_con.VALUE_EX_HEADER_RESERVED
+            for rs_label in s_con.LABELS_EX_HEADER_RESERVED:
+                rs_byte = self.buffer[rs_label]
+                comp(rs_label, byte_decoder(rs_byte), res_expected_byte, warn_only=True, cb=hex)
+
 
         self.valid = lambda : True
         return self.valid()
