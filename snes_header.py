@@ -39,7 +39,7 @@ class SNESHeader:
         return log_copy
 
     def validate(self, header_buffer):
-        def comp(l,a,e,ll,cb): 
+        def comp(l,a,e,ll,cb=lambda x : x): 
             result, log = fd.compare_actual_to_expected(l,a,e,ll,cb) #compare function
             self.valid_log += log
             return result
@@ -92,7 +92,8 @@ class SNESHeader:
 
         #Check 04 - Confirm that all ASCII fields have ascii characters
         if ex_flag_bool:
-            ascii_fields = [s_con.LABEL_MAKER_CODE, s_con.LABEL_GAME_CODE]
+            ascii_fields = [fd[0] for fd in s_con.EX_HEADER_ASCII_FIELDS]
+            # print(f"{ascii_fields}")
             for as_field in ascii_fields:
                 as_bytes = buffer_dict[as_field]
                 try:
