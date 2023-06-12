@@ -1,4 +1,4 @@
-import sys
+import sys, os
 from src.snes.snes_checksum import calculate_check_sum
 from src.snes.snes_constants import NORMAL_HEADER_FIELDS, COPIER_HEADER_SIZE, HEADER_OFFSETS
 from src.snes.snes_constants import (
@@ -7,7 +7,7 @@ from src.snes.snes_constants import (
         LABEL_COUNTRY_CODE, LABEL_EX_HEADER_FLAG, LABEL_ROM_VERSION,
         LABEL_CHECKSUM, LABEL_COMPLEMENT
     )
-from src.snes.snes_constants import LABEL_COUNTRY_UNKNOWN
+from src.snes.snes_constants import LABEL_COUNTRY_UNKNOWN, LABEL_CHIP_RAM
 from src.snes.snes_byte_decoders import  DECODER_MAP
 from src.common.checksum import checksum_complement_search
 from src.common.constants import BYTE_ORDER_LITTLE_ENDIAN as LITTLE_ENDIAN
@@ -41,6 +41,8 @@ def is_snes_header(file_path, byte_pos_of_checksum):
          binary_data = f.read(buffer_len)
         #  print(f"raw_data@{hex(offset)}={binary_data}")
          hb.fill_buffer(binary_data,overflow=True)
+         f.seek(0, os.SEEK_END)
+         file_size = f.tell()
     
     # Read and decode bytes one by one until an invalid character is found
     # for i in hb.get_field_position
@@ -80,11 +82,10 @@ def is_snes_header(file_path, byte_pos_of_checksum):
     expected_rom_start_offset = HEADER_OFFSETS[rom_memory_map]
     extended_header_length = 16
     start_of_rom_pos = offset - extended_header_length - expected_rom_start_offset
-    # printable_list = [offset, expected_rom_start_offset, start_of_rom_pos]
-    # printables = list(map(hex, printable_list))
-    # printables.extend(list(map(lambda x : f"{x}", printable_list)))
-    # print(printables)
-    # print(",".join(printables)))
+    printable_list = [offset, expected_rom_start_offset, start_of_rom_pos, file_size]
+    printables = list(map(hex, printable_list))
+    printables.extend(list(map(lambda x : f"{x}", printable_list)))
+    print(printables)
 
     f_raw_chipset = hb.get_field_data(LABEL_CHIPSET)
     chipset_decoder = DECODER_MAP[LABEL_CHIPSET]
@@ -98,36 +99,57 @@ def is_snes_header(file_path, byte_pos_of_checksum):
     calculated_checksum = calculate_check_sum(file_path, start_of_rom_pos)
     if calculated_checksum == int_decoder(f_raw_checksum):
         print(f"VALID CHECKSUM - this ROM is {decodeable_title}")
-        return True
+        return True #todo validity_score at this point should still be zero, might need an else
     
     # all non-fuzzy validity checks have been applied, build a validity_score for remaining fields
-    validity_score = 0
+    validity_score = 0 #todo make the whole thing about the validity_score
+
+    byte_decoder = DECODER_MAP[ENCODING_BYTE]
+    f_raw_rom_size = hb.get_field_data(LABEL_ROM_SIZE)
+    BYTES_PER_KB = pow(2,10)
+    decoded_rom_size = pow(2, byte_decoder(f_raw_rom_size)) * BYTES_PER_KB
+    actual_rom_size = file_size - start_of_rom_pos
+    if decoded_rom_size < actual_rom_size:
+        validity_score -= 1
+    elif decoded_rom_size > actual_rom_size:
+        validity_score -= 5
+    else: #they match
+        validity_score += 2
+    
+    f_raw_ram_size = hb.get_field_data(LABEL_RAM_SIZE)
+    MAX_RAM_SIZE_VALUE = 7
+    decoded_ram_size_byte = byte_decoder(f_raw_ram_size)
+    decoded_ram_size = pow(2, decoded_ram_size_byte) * BYTES_PER_KB
+    if decoded_ram_size_byte > MAX_RAM_SIZE_VALUE:
+        times_larger = decoded_ram_size_byte//MAX_RAM_SIZE_VALUE
+        validity_score -= 5 * times_larger
+    if not LABEL_CHIP_RAM in rom_chipset[LABEL_CHIPSET][1]: #todo fix this - I don't like this hard coded index
+        validity_score -= 5 
+
     f_raw_country = hb.get_field_data(LABEL_COUNTRY_CODE)
     country_decoder = DECODER_MAP[LABEL_COUNTRY_CODE]
     rom_country = country_decoder(f_raw_country)  # only need the map_mode, first returned
     if rom_country != LABEL_COUNTRY_UNKNOWN:
         validity_score -= 1
 
-    byte_decoder = DECODER_MAP[ENCODING_BYTE]
-    f_raw_rom_size = hb.get_field_data(LABEL_RAM_SIZE)
-    f_raw_ram_size = hb.get_field_data(LABEL_ROM_SIZE)
     f_raw_rom_version = hb.get_field_data(LABEL_ROM_VERSION)
+    validity_score -= byte_decoder(f_raw_rom_version)//10
 
     f_raw_complement = hb.get_field_data(LABEL_COMPLEMENT)
 
     def print_field(field_label, suffix):
         print(f"  ➡  {field_label}\t@{hex(offset+hb.get_byte_width(0,field_label))}\tis {suffix}")
 
-    print(f"looking for header @ {hex(byte_pos_of_checksum)} in {file_path}")
+    print(f"looking for header @ {hex(byte_pos_of_checksum)} in {file_path} [{validity_score=}]")
     print(f"{pre_checksum_byte_width} bytes before pos is {hex(offset)} (pos_sans_copier={hex(offset-COPIER_HEADER_SIZE)})")
     print(f"  ➡  {LABEL_GAME_TITLE}\t@{hex(offset)}\tis {f_raw_title}:'{decodeable_title}'")
     print_field(LABEL_MAPSPEED, f"{f_raw_map_speed}: 0b{bin(int.from_bytes(f_raw_map_speed,LITTLE_ENDIAN))[2:].zfill(8)} maps to '{map_speed_fields}'")
     print_field(LABEL_CHIPSET, f"{f_raw_chipset}:'{hex(byte_decoder(f_raw_chipset))}' maps to '{rom_chipset}'")
     # print_field(LABEL_CHIPSET, f"{f_raw_chipset}:'{hex(byte_decoder(f_raw_chipset))}'")
     
-    print_field(LABEL_ROM_SIZE, f"{f_raw_rom_size}:'{byte_decoder(f_raw_rom_size)}'")
-    print_field(LABEL_RAM_SIZE, f"{f_raw_ram_size}:'{byte_decoder(f_raw_ram_size)}'")
-    print_field(LABEL_COUNTRY_CODE, f"{f_raw_country}:'{byte_decoder(f_raw_ram_size)}'")
+    print_field(LABEL_ROM_SIZE, f"{f_raw_rom_size}:'{byte_decoder(f_raw_rom_size)}' meaning {decoded_rom_size}B (Actual is {actual_rom_size}B)")
+    print_field(LABEL_RAM_SIZE, f"{f_raw_ram_size}:'{byte_decoder(f_raw_ram_size)}' meaning {decoded_ram_size}B")
+    print_field(LABEL_COUNTRY_CODE, f"{f_raw_country}:'{byte_decoder(f_raw_ram_size)}' maps to '{rom_country}'")
     
     print_field(LABEL_EX_HEADER_FLAG, f"{f_raw_ex_header_flag}:'{hex(ex_flag_act)}'")
     
