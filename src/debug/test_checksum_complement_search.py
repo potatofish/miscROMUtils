@@ -1,6 +1,6 @@
 import sys
-from src.common.checksum import checksum_complement_search
-from src.snes.snes_constants import NORMAL_HEADER_FIELDS, COPIER_HEADER_SIZE
+from src.snes.snes_checksum import calculate_check_sum
+from src.snes.snes_constants import NORMAL_HEADER_FIELDS, COPIER_HEADER_SIZE, HEADER_OFFSETS
 from src.snes.snes_constants import (
         LABEL_GAME_TITLE, LABEL_MAPSPEED, LABEL_CHIPSET, 
         LABEL_ROM_SIZE, LABEL_RAM_SIZE,
@@ -8,6 +8,7 @@ from src.snes.snes_constants import (
         LABEL_CHECKSUM, LABEL_COMPLEMENT
     )
 from src.snes.snes_byte_decoders import  DECODER_MAP
+from src.common.checksum import checksum_complement_search
 from src.common.constants import BYTE_ORDER_LITTLE_ENDIAN as LITTLE_ENDIAN
 from src.common.byte_decoders import ENCODING_JIS, ENCODING_BYTE, ENCODING_ASCII, ENCODING_INT
 from src.common.header_buffer import HeaderBuffer
@@ -71,10 +72,24 @@ def is_snes_header(file_path, byte_pos_of_checksum):
     f_raw_map_speed = hb.get_field_data(LABEL_MAPSPEED)
     map_speed_decoder = DECODER_MAP[LABEL_MAPSPEED]
     try:
-        rom_map_mode = map_speed_decoder(f_raw_map_speed)  # only need the map_mode, first returned
+        map_speed_fields = map_speed_decoder(f_raw_map_speed)  # only need the map_mode, first returned
     except:
         return False
-    
+    rom_memory_map, rom_speed_mode, rom_special_mode = map_speed_fields
+    expected_rom_start_offset = HEADER_OFFSETS[rom_memory_map]
+    extended_header_length = 16
+    start_of_rom_pos = offset - extended_header_length - expected_rom_start_offset
+    printable_list = [offset, expected_rom_start_offset, start_of_rom_pos]
+    printables = list(map(hex, printable_list))
+    printables.extend(list(map(lambda x : f"{x}", printable_list)))
+    print(printables)
+    # print(",".join(printables)))
+    calculated_checksum = calculate_check_sum(file_path, start_of_rom_pos)
+
+    f_raw_country = hb.get_field_data(LABEL_COUNTRY_CODE)
+    country_decoder = DECODER_MAP[LABEL_COUNTRY_CODE]
+    rom_country = country_decoder(f_raw_country)  # only need the map_mode, first returned
+
     f_raw_chipset = hb.get_field_data(LABEL_CHIPSET)
     chipset_decoder = DECODER_MAP[LABEL_CHIPSET]
     try:
@@ -97,17 +112,18 @@ def is_snes_header(file_path, byte_pos_of_checksum):
     print(f"looking for header @ {hex(byte_pos_of_checksum)} in {file_path}")
     print(f"{pre_checksum_byte_width} bytes before pos is {hex(offset)} (pos_sans_copier={hex(offset-COPIER_HEADER_SIZE)})")
     print(f"  ➡  {LABEL_GAME_TITLE}\t@{hex(offset)}\tis {f_raw_title}:'{decodeable_title}'")
-    print_field(LABEL_MAPSPEED, f"{f_raw_map_speed}: 0b{bin(int.from_bytes(f_raw_map_speed,LITTLE_ENDIAN))[2:].zfill(8)} maps to '{rom_map_mode}'")
+    print_field(LABEL_MAPSPEED, f"{f_raw_map_speed}: 0b{bin(int.from_bytes(f_raw_map_speed,LITTLE_ENDIAN))[2:].zfill(8)} maps to '{map_speed_fields}'")
     print_field(LABEL_CHIPSET, f"{f_raw_chipset}:'{hex(byte_decoder(f_raw_chipset))}' maps to '{rom_chipset}'")
     # print_field(LABEL_CHIPSET, f"{f_raw_chipset}:'{hex(byte_decoder(f_raw_chipset))}'")
     
-    print_field(LABEL_RAM_SIZE, f"{f_raw_ram_size}:'{byte_decoder(f_raw_ram_size)}'")
     print_field(LABEL_ROM_SIZE, f"{f_raw_rom_size}:'{byte_decoder(f_raw_rom_size)}'")
+    print_field(LABEL_RAM_SIZE, f"{f_raw_ram_size}:'{byte_decoder(f_raw_ram_size)}'")
+    print_field(LABEL_COUNTRY_CODE, f"{f_raw_country}:'{byte_decoder(f_raw_ram_size)}'")
     
     print_field(LABEL_EX_HEADER_FLAG, f"{f_raw_ex_header_flag}:'{hex(ex_flag_act)}'")
     
     print_field(LABEL_ROM_VERSION, f"{f_raw_rom_version}:'{byte_decoder(f_raw_rom_version)}'")
-    print_field(LABEL_CHECKSUM, f"{f_raw_checksum}:'{hex(int_decoder(f_raw_checksum))}'")
+    print_field(LABEL_CHECKSUM, f"{f_raw_checksum}:'{hex(int_decoder(f_raw_checksum))} vs {hex(calculated_checksum)=}'")
     print_field(LABEL_COMPLEMENT, f"{f_raw_complement}:'{hex(int_decoder(f_raw_complement))}'")
     # print(f"  ➡  {LABEL_MAPSPEED}\t@{hex(offset+hb.get_byte_width(0,LABEL_MAPSPEED))}\tis {f_raw_map_speed}:{hex(f_raw_map_speed)} maps to '{rom_map_mode}'")
     # print(f"  ➡  {LABEL_EX_HEADER_FLAG}\t@{hex(offset+hb.get_byte_width(0,LABEL_EX_HEADER_FLAG))}\tis {f_raw_ex_header_flag}:'{hex(ex_flag_act)}'")

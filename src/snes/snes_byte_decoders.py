@@ -68,11 +68,20 @@ def decode_chipset(chipset_byte):
     # print(results)
     return results
     
+def decode_country(country_byte):
+    if len(country_byte) != 1 or not isinstance(country_byte, bytes):
+        raise ImportError(f"country_byte is unexpected value. was expecting 1 byte of type bytes, got {country_byte}")
+    byte_decoder = bd.DECODER_MAP[bd.ENCODING_BYTE]
 
+    country_as_int = byte_decoder(country_byte)
+    if country_as_int in s_con.COUNTRY_CODE_DICTIONARY:
+        return s_con.COUNTRY_CODE_DICTIONARY[country_as_int]
+    return s_con.LABEL_COUNTRY_UNKNOWN
 
 DECODER_MAP = bd.DECODER_MAP
 DECODER_MAP.update(dict([
     [s_con.LABEL_MAPSPEED, decodeMapSpeed],
     [s_con.LABEL_CHIPSET, decode_chipset],
+    [s_con.LABEL_COUNTRY_CODE, decode_country],
     [s_con.LABEL_EX_HEADER_FLAG, decode_ex_header_flag]
 ]))
