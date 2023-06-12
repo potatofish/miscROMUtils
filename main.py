@@ -2,7 +2,7 @@
 import sys
 import os
 
-from snes_header import SNESHeader
+from src.snes.snes_header import SNESHeader
 
 invalid_files = {}
 valid_files = {}

@@ -1,4 +1,4 @@
-import snes_constants as s_con
+import src.snes.snes_constants as s_con
 import os
 
 # Define named constants

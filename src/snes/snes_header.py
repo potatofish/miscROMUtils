@@ -1,10 +1,12 @@
-import field_definition as fd
-from header_buffer import HeaderBuffer
-import snes_constants as s_con
-import snes_checksum as s_cs
-import snes_byte_decoders as s_bd
-import byte_decoders as bd
+import src.common.field_definition as fd
+from src.common.header_buffer import HeaderBuffer
+from src.common.checksum import is_checksum
+import src.snes.snes_constants as s_con
+import src.snes.snes_checksum as s_cs
+import src.snes.snes_byte_decoders as s_bd
+import src.common.byte_decoders as bd
 import os
+
 
 class SNESHeader:
     def __init__(self, file_name):
@@ -13,13 +15,16 @@ class SNESHeader:
         self.valid_log = ""
         self.valid_log +=  f"Decoding {file_name}\n"
         self.file_name = file_name
+        self.build_header_offset_list(fields)
+
+    def build_header_offset_list(self, fields):
         with open(self.file_name, 'rb') as f:
             for mm, raw_offs  in s_con.HEADER_OFFSETS.items():
                 for offs in [raw_offs, raw_offs + s_con.COPIER_HEADER_SIZE]:
                     f.seek(offs,os.SEEK_SET)
                     binary_data = f.read()
                     self.memory_map = mm
-                    hb = HeaderBuffer(binary_data, fields)
+                    hb = HeaderBuffer(fields, binary_data)
                     # hb.print_raw()
                     self.valid_log += f"- trying for map {mm} @ {hex(offs)}\n"
                     self.encoded_header = hb
