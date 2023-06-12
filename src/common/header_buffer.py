@@ -38,6 +38,7 @@ class HeaderBuffer:
             field_at_pos = self.get_field_label_by_position(pos)
             field_size = self.get_field_size(field_at_pos)
             self.buffer[field_at_pos] = binary_data[:field_size]
+            # print([pos, field_at_pos, field_size, self.buffer[field_at_pos]])
             binary_data = binary_data[field_size:]
 
     def field_count(self):

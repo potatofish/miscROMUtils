@@ -162,9 +162,12 @@ LABEL_ROM_SIZE = "ROM Size"
 LABEL_RAM_SIZE = "RAM Size"
 LABEL_ROM_VERSION = "ROM Vers."
 
-LABEL_COMPLEMENT = cons.LABEL_COMPLEMENT
 LABEL_CHECKSUM = cons.LABEL_CHECKSUM
+LABEL_COMPLEMENT = cons.LABEL_COMPLEMENT
 
+# order based on https://sneslab.net/wiki/SNES_ROM_Header#ROM_Registration_Data
+# WARNING - https://snes.nesdev.org/wiki/ROM_header has wrong order
+# todo figure out why switching the label order of checksum and complement break this
 NORMAL_HEADER_FIELDS = [
     (LABEL_GAME_TITLE, 21), 
     (LABEL_MAPSPEED, 1), 
@@ -174,8 +177,8 @@ NORMAL_HEADER_FIELDS = [
     (LABEL_COUNTRY_CODE, 1), 
     (LABEL_DEV_ID, 1), 
     (LABEL_ROM_VERSION, 1),
-    (LABEL_CHECKSUM, 2),
-    (LABEL_COMPLEMENT, 2)
+    (LABEL_COMPLEMENT, 2),
+    (LABEL_CHECKSUM, 2)
 ]
 HEADER_FIELDS = EX_HEADER_FIELDS.copy()
 HEADER_FIELDS.extend(NORMAL_HEADER_FIELDS)

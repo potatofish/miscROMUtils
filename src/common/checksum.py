@@ -30,21 +30,24 @@ def checksum_complement_search_fwd(f_handle,byte_order=LITTLE_ENDIAN):
             return False
         return [f_handle.read(2),fh_pos]
 
-    checksum_two_byte_read = two_byte_read_fwd()
-    if not checksum_two_byte_read:
+    complement_two_byte_read = two_byte_read_fwd()
+    if not complement_two_byte_read:
         return
-    checksum, checksum_pos = checksum_two_byte_read
+    # checksum, checksum_pos = checksum_two_byte_read
+    complement, complement_pos = complement_two_byte_read
 
     while f_handle.tell() < file_size:
-        complement_two_byte_read = two_byte_read_fwd()
-        if not complement_two_byte_read:
+        checksum_two_byte_read = two_byte_read_fwd()
+        if not checksum_two_byte_read:
             return
-        complement, complement_pos = complement_two_byte_read
+        # complement, complement_pos = complement_two_byte_read
+        checksum, checksum_pos = checksum_two_byte_read
         checksum_integer = int.from_bytes(checksum, byte_order)
         complement_integer = int.from_bytes(complement, byte_order)
         if is_checksum(checksum_integer, complement_integer):
             yield checksum_pos
-        checksum, checksum_pos = complement, complement_pos
+        # checksum, checksum_pos = complement, complement_pos
+        complement, complement_pos = checksum, checksum_pos
 
 def checksum_complement_search_bkwd(f_handle, byte_order=LITTLE_ENDIAN):
     f_handle.seek(0,os.SEEK_END)
@@ -56,21 +59,24 @@ def checksum_complement_search_bkwd(f_handle, byte_order=LITTLE_ENDIAN):
         f_handle.seek(fh_pos - 2)
         return [f_handle.read(2), fh_pos - 2]
     
-    complement_two_byte_read = two_byte_read_bkwd()
-    if not complement_two_byte_read:
+    checksum_two_byte_read = two_byte_read_bkwd()
+    if not checksum_two_byte_read:
         return
-    complement, complement_pos = complement_two_byte_read
+    # complement, complement_pos = complement_two_byte_read
+    checksum, checksum_pos = checksum_two_byte_read
 
     while complement_pos >= 0:
-        checksum_two_byte_read = two_byte_read_bkwd()
-        if not checksum_two_byte_read:
+        complement_two_byte_read = two_byte_read_bkwd()
+        if not complement_two_byte_read:
             return
-        checksum, checksum_pos = checksum_two_byte_read
+        # checksum, checksum_pos = checksum_two_byte_read
+        complement, complement_pos = complement_two_byte_read
         checksum_integer = int.from_bytes(checksum, byte_order)
         complement_integer = int.from_bytes(complement, byte_order)
         if is_checksum(checksum_integer, complement_integer):
             yield checksum_pos
-        complement, complement_pos = checksum, checksum_pos
+        # complement, complement_pos = checksum, checksum_pos
+        checksum, checksum_pos = complement, complement_pos
 
 CHECKSUM_SEARCH_FORWARD = 'forward'
 CHECKSUM_SEARCH_BACKWARD = 'backward'

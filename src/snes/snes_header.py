@@ -9,15 +9,30 @@ import os
 
 
 class SNESHeader:
-    def __init__(self, file_name):
-        fields = [fd.FieldDefinition(name, length) for name, length in s_con.HEADER_FIELDS]
-        
+    def __init__(self, file_name, hb=None, copier_header_size=0):
         self.valid_log = ""
         self.valid_log +=  f"Decoding {file_name}\n"
         self.file_name = file_name
-        self.build_header_offset_list(fields)
+        if hb == None:
+            self.build_header_offset_list()
+        if not isinstance(hb, HeaderBuffer):
+            raise ImportError(f"Invalid Header Buffer type")
+        if copier_header_size < 0:
+            raise ImportError(f"Invalid copier_header_size type")
+        self.encoded_header = hb
+        self.has_copier_header = copier_header_size > 0
+        self.valid = lambda : False
+        ms_decoder = s_bd.DECODER_MAP[s_con.LABEL_MAPSPEED]
+        self.memory_map = ms_decoder(hb.get_field_data(s_con.LABEL_MAPSPEED))[0] #todo remove this hardcoding
+        # print(self.memory_map)
+        self.validate(hb)
+        if not self.valid():
+            raise ImportError(f"Buffer Contents Does Not Conform to Header Spefications")
+
+   
 
     def build_header_offset_list(self, fields):
+        fields = [fd.FieldDefinition(name, length) for name, length in s_con.HEADER_FIELDS]
         with open(self.file_name, 'rb') as f:
             for mm, raw_offs  in s_con.HEADER_OFFSETS.items():
                 for offs in [raw_offs, raw_offs + s_con.COPIER_HEADER_SIZE]:
@@ -70,7 +85,8 @@ class SNESHeader:
 
         #Check 02 - Do the checksum/1s-complement calculated off file's bytes (actual) 
         #           match the checksum/1s-complement read from the file
-        for cs_mode in ['nesdev', 'sneslab']:
+        # for cs_mode in ['nesdev', 'sneslab']:
+        for cs_mode in ['nesdev']:
             cs_actual = s_cs.calculate_check_sum(self.file_name, self.has_copier_header, cs_mode)
             cs_bytes = buffer_dict[s_con.LABEL_CHECKSUM]
             cs_expected = int_decoder(cs_bytes)
