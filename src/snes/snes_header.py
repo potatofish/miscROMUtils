@@ -25,6 +25,8 @@ class SNESHeader:
         ms_decoder = s_bd.DECODER_MAP[s_con.LABEL_MAPSPEED]
         self.memory_map = ms_decoder(hb.get_field_data(s_con.LABEL_MAPSPEED))[0] #todo remove this hardcoding
         # print(self.memory_map)
+        # print(f"{self.encoded_header.get_values_as_dict()=}")
+
         self.validate(hb)
         if not self.valid():
             raise ImportError(f"Buffer Contents Does Not Conform to Header Spefications")
@@ -108,6 +110,7 @@ class SNESHeader:
         if ex_flag_bool:
             res_expected_byte = s_con.VALUE_EX_HEADER_RESERVED
             for rs_label in s_con.LABELS_EX_HEADER_RESERVED:
+                # print(f"check [{rs_label}] in {s_con.LABELS_EX_HEADER_RESERVED=}")
                 rs_byte = buffer_dict[rs_label]
                 comp(rs_label, byte_decoder(rs_byte), res_expected_byte, fd.LOG_LEVEL_VERBOSE, cb=hex)
 

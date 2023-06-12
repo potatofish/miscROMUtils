@@ -17,7 +17,9 @@ from src.common.byte_decoders import ENCODING_JIS, ENCODING_BYTE, ENCODING_ASCII
 from src.common.header_buffer import HeaderBuffer
 
 
-# HEADER_SIZE = 
+VALIDITIY_SCORE_MINIMUM = float('-inf')
+VALIDITIY_SCORE_MAXIMUM = float('inf')
+
 def try_decode(raw_text, encoding):
     working_raw = raw_text[:len(raw_text)]
     # print(f"{working_raw}")
@@ -73,7 +75,7 @@ def is_snes_header(file_path, byte_pos_of_checksum, mode='quiet'):
     if len(decodeable_title) != 21:
         if mode == 'debug' : 
             print (f"Invalid length for field='{LABEL_GAME_TITLE}' in Buffer @ {hex(offset)} {decodeable_title=}")
-        validity_score = float('-inf')
+        validity_score = VALIDITIY_SCORE_MINIMUM
         return [validity_score, hb]
     
     # print(f"{HEADER_FIELDS=}\n{NORMAL_HEADER_FIELDS=}")
@@ -86,13 +88,19 @@ def is_snes_header(file_path, byte_pos_of_checksum, mode='quiet'):
         with open(file_path, 'rb') as f:
             f.seek(offset- extended_header_length)
             binary_data = f.read(extended_header_length)
-            ex_hb.fill_buffer(binary_data,overflow=True)
-            full_hb = hb.join(ex_hb, 0)
-            print(f"{full_hb.get_values_as_dict()=}")
+        
+        ex_hb.fill_buffer(binary_data,overflow=True)
+        full_hb = hb.join(ex_hb, 0)
+        # print(f"{full_hb.get_values_as_dict()=}")
 
+        # validdate full_hb contents
+        # todo this
+
+        hb = full_hb
         # offset = byte_pos_of_checksum - pre_checksum_byte_width
         print(f"TODO - implement reading the extended header {extended_header_length=}")
 
+    # print(f"{hb.get_values_as_dict()=}")
     f_raw_map_speed = hb.get_field_data(LABEL_MAPSPEED)
     map_speed_decoder = DECODER_MAP[LABEL_MAPSPEED]
     try:
@@ -100,13 +108,13 @@ def is_snes_header(file_path, byte_pos_of_checksum, mode='quiet'):
     except:
         if mode == 'debug' : 
             print (f"Invalid value for field='{LABEL_MAPSPEED}' in Buffer @ @ {hex(offset)} {f_raw_map_speed=}")
-        validity_score = float('-inf')
+        validity_score = VALIDITIY_SCORE_MINIMUM
         return [validity_score, hb]
     rom_memory_map, rom_speed_mode, rom_special_mode = map_speed_fields
     expected_rom_start_offset = HEADER_OFFSETS[rom_memory_map]
     start_of_rom_pos = offset - extended_header_length - expected_rom_start_offset
     if start_of_rom_pos < 0:
-        validity_score = float('-inf')
+        validity_score = VALIDITIY_SCORE_MINIMUM
         return [validity_score, hb]
 
 
@@ -115,7 +123,7 @@ def is_snes_header(file_path, byte_pos_of_checksum, mode='quiet'):
     try:
         rom_chipset = chipset_decoder(f_raw_chipset)  # only need the map_mode, first returned
     except:
-        validity_score = float('-inf')
+        validity_score = VALIDITIY_SCORE_MINIMUM
         return [validity_score, hb]
     
     f_raw_checksum = hb.get_field_data(LABEL_CHECKSUM)
@@ -123,7 +131,7 @@ def is_snes_header(file_path, byte_pos_of_checksum, mode='quiet'):
     calculated_checksum = calculate_check_sum(file_path, start_of_rom_pos)
     if calculated_checksum == int_decoder(f_raw_checksum):
         print(f"VALID CHECKSUM - this ROM is {decodeable_title}")
-        validity_score = float('inf')
+        validity_score = VALIDITIY_SCORE_MAXIMUM
         return [validity_score, hb]
     
     # all non-fuzzy validity checks have been applied
@@ -195,9 +203,14 @@ def parse_search_results(file_path):
     candidates = {}
     for pos in checksum_complement_search(file_path):
         score, hb = is_snes_header(file_path, pos, 'normal')
+        if score == VALIDITIY_SCORE_MAXIMUM:
+            bad_candidates = candidates
+            candidates = {}
         candidates[pos] = {'validity': score, 'buffer': hb}
+        if score == VALIDITIY_SCORE_MAXIMUM:
+            break
 
-    max_validity = float('-inf')
+    max_validity = VALIDITIY_SCORE_MINIMUM
     max_pos = None
     for pos, candidate in candidates.items():
         if candidate['validity'] > max_validity:

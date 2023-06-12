@@ -165,12 +165,17 @@ class HeaderBuffer:
                     new_field_order.append(newHB_f_name)
                     new_field_descriptors[newHB_f_name] = new_HeaderBuffer.field_descriptors[newHB_f_name]
                     new_fields_buffer[newHB_f_name] = new_HeaderBuffer.buffer[newHB_f_name]
-            else:
-                # updated_HB_pos = currHB_f_pos if currHB_f_pos < start_insert_at_pos else currHB_f_pos + new_fields_count
-                # new_field_order[updated_HB_pos] = currHB_f_name
-                new_field_order.append(currHB_f_name)
-                new_field_descriptors[currHB_f_name] = self.field_descriptors[currHB_f_name]
-                new_fields_buffer[currHB_f_name] = self.buffer[currHB_f_name]
+            
+            new_field_order.append(currHB_f_name)
+            new_field_descriptors[currHB_f_name] = self.field_descriptors[currHB_f_name]
+            new_fields_buffer[currHB_f_name] = self.buffer[currHB_f_name]
+
+            # else:
+            #     # updated_HB_pos = currHB_f_pos if currHB_f_pos < start_insert_at_pos else currHB_f_pos + new_fields_count
+            #     # new_field_order[updated_HB_pos] = currHB_f_name
+            #     new_field_order.append(currHB_f_name)
+            #     new_field_descriptors[currHB_f_name] = self.field_descriptors[currHB_f_name]
+            #     new_fields_buffer[currHB_f_name] = self.buffer[currHB_f_name]
 
         return HeaderBuffer([new_field_order, new_fields_buffer, new_field_descriptors])
 
