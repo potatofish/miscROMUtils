@@ -7,6 +7,7 @@ from src.snes.snes_constants import (
         LABEL_COUNTRY_CODE, LABEL_EX_HEADER_FLAG, LABEL_ROM_VERSION,
         LABEL_CHECKSUM, LABEL_COMPLEMENT
     )
+from src.snes.snes_constants import LABEL_COUNTRY_UNKNOWN
 from src.snes.snes_byte_decoders import  DECODER_MAP
 from src.common.checksum import checksum_complement_search
 from src.common.constants import BYTE_ORDER_LITTLE_ENDIAN as LITTLE_ENDIAN
@@ -79,16 +80,11 @@ def is_snes_header(file_path, byte_pos_of_checksum):
     expected_rom_start_offset = HEADER_OFFSETS[rom_memory_map]
     extended_header_length = 16
     start_of_rom_pos = offset - extended_header_length - expected_rom_start_offset
-    printable_list = [offset, expected_rom_start_offset, start_of_rom_pos]
-    printables = list(map(hex, printable_list))
-    printables.extend(list(map(lambda x : f"{x}", printable_list)))
-    print(printables)
+    # printable_list = [offset, expected_rom_start_offset, start_of_rom_pos]
+    # printables = list(map(hex, printable_list))
+    # printables.extend(list(map(lambda x : f"{x}", printable_list)))
+    # print(printables)
     # print(",".join(printables)))
-    calculated_checksum = calculate_check_sum(file_path, start_of_rom_pos)
-
-    f_raw_country = hb.get_field_data(LABEL_COUNTRY_CODE)
-    country_decoder = DECODER_MAP[LABEL_COUNTRY_CODE]
-    rom_country = country_decoder(f_raw_country)  # only need the map_mode, first returned
 
     f_raw_chipset = hb.get_field_data(LABEL_CHIPSET)
     chipset_decoder = DECODER_MAP[LABEL_CHIPSET]
@@ -96,14 +92,27 @@ def is_snes_header(file_path, byte_pos_of_checksum):
         rom_chipset = chipset_decoder(f_raw_chipset)  # only need the map_mode, first returned
     except:
         return False
+    
+    f_raw_checksum = hb.get_field_data(LABEL_CHECKSUM)
+    int_decoder = DECODER_MAP[ENCODING_BYTE]
+    calculated_checksum = calculate_check_sum(file_path, start_of_rom_pos)
+    if calculated_checksum == int_decoder(f_raw_checksum):
+        print(f"VALID CHECKSUM - this ROM is {decodeable_title}")
+        return True
+    
+    # all non-fuzzy validity checks have been applied, build a validity_score for remaining fields
+    validity_score = 0
+    f_raw_country = hb.get_field_data(LABEL_COUNTRY_CODE)
+    country_decoder = DECODER_MAP[LABEL_COUNTRY_CODE]
+    rom_country = country_decoder(f_raw_country)  # only need the map_mode, first returned
+    if rom_country != LABEL_COUNTRY_UNKNOWN:
+        validity_score -= 1
 
     byte_decoder = DECODER_MAP[ENCODING_BYTE]
     f_raw_rom_size = hb.get_field_data(LABEL_RAM_SIZE)
     f_raw_ram_size = hb.get_field_data(LABEL_ROM_SIZE)
     f_raw_rom_version = hb.get_field_data(LABEL_ROM_VERSION)
 
-    int_decoder = DECODER_MAP[ENCODING_BYTE]
-    f_raw_checksum = hb.get_field_data(LABEL_CHECKSUM)
     f_raw_complement = hb.get_field_data(LABEL_COMPLEMENT)
 
     def print_field(field_label, suffix):

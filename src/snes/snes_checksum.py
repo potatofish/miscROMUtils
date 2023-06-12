@@ -11,7 +11,7 @@ def calculate_check_sum(f_name, copier_offset=False, mode='nesdev'):
         rom_data_offset = s_con.COPIER_HEADER_SIZE
     elif isinstance(copier_offset,int):
         rom_data_offset = copier_offset
-    print([mode, f_name, copier_offset, rom_data_offset])
+    # print([mode, f_name, copier_offset, rom_data_offset])
 
     with open(f_name, 'rb') as f:
         f.seek(rom_data_offset, os.SEEK_SET)
