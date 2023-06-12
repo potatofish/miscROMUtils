@@ -2,7 +2,8 @@ import sys, os
 from src.snes.snes_byte_decoders import  DECODER_MAP
 from src.snes.snes_header import SNESHeader
 from src.snes.snes_checksum import calculate_check_sum
-from src.snes.snes_constants import NORMAL_HEADER_FIELDS, COPIER_HEADER_SIZE, HEADER_OFFSETS
+from src.snes.snes_constants import NORMAL_HEADER_FIELDS, HEADER_FIELDS, EX_HEADER_FIELDS
+from src.snes.snes_constants import COPIER_HEADER_SIZE, HEADER_OFFSETS
 from src.snes.snes_constants import (
         LABEL_GAME_TITLE, LABEL_MAPSPEED, LABEL_CHIPSET, 
         LABEL_ROM_SIZE, LABEL_RAM_SIZE,
@@ -34,8 +35,10 @@ def is_snes_header(file_path, byte_pos_of_checksum, mode='quiet'):
     # print(f"looking for header @ {hex(byte_pos_of_checksum)} in {file_path}")
     # Seek to pos-28 in the file
     hb = HeaderBuffer(NORMAL_HEADER_FIELDS)
+    # hb = HeaderBuffer(HEADER_FIELDS)
     pre_checksum_byte_width = hb.get_byte_width(0,LABEL_CHECKSUM)
     offset = byte_pos_of_checksum - pre_checksum_byte_width
+    extended_header_length = HeaderBuffer(EX_HEADER_FIELDS).get_byte_width()
     
     validity_score = 0
 
@@ -68,25 +71,39 @@ def is_snes_header(file_path, byte_pos_of_checksum, mode='quiet'):
     
     
     if len(decodeable_title) != 21:
+        if mode == 'debug' : 
+            print (f"Invalid length for field='{LABEL_GAME_TITLE}' in Buffer @ {hex(offset)} {decodeable_title=}")
         validity_score = float('-inf')
         return [validity_score, hb]
+    
+    # print(f"{HEADER_FIELDS=}\n{NORMAL_HEADER_FIELDS=}")
     
     f_raw_ex_header_flag = hb.get_field_data(LABEL_EX_HEADER_FLAG)
     ex_flag_decoder = DECODER_MAP[LABEL_EX_HEADER_FLAG]
     ex_flag_bool, ex_flag_act = ex_flag_decoder(f_raw_ex_header_flag)
     if ex_flag_bool:
-        print("TODO - implement reading the extended header")
+        ex_hb = HeaderBuffer(EX_HEADER_FIELDS)
+        with open(file_path, 'rb') as f:
+            f.seek(offset- extended_header_length)
+            binary_data = f.read(extended_header_length)
+            ex_hb.fill_buffer(binary_data,overflow=True)
+            full_hb = hb.join(ex_hb, 0)
+            print(f"{full_hb.get_values_as_dict()=}")
+
+        # offset = byte_pos_of_checksum - pre_checksum_byte_width
+        print(f"TODO - implement reading the extended header {extended_header_length=}")
 
     f_raw_map_speed = hb.get_field_data(LABEL_MAPSPEED)
     map_speed_decoder = DECODER_MAP[LABEL_MAPSPEED]
     try:
         map_speed_fields = map_speed_decoder(f_raw_map_speed)  # only need the map_mode, first returned
     except:
+        if mode == 'debug' : 
+            print (f"Invalid value for field='{LABEL_MAPSPEED}' in Buffer @ @ {hex(offset)} {f_raw_map_speed=}")
         validity_score = float('-inf')
         return [validity_score, hb]
     rom_memory_map, rom_speed_mode, rom_special_mode = map_speed_fields
     expected_rom_start_offset = HEADER_OFFSETS[rom_memory_map]
-    extended_header_length = 16
     start_of_rom_pos = offset - extended_header_length - expected_rom_start_offset
     if start_of_rom_pos < 0:
         validity_score = float('-inf')
@@ -177,7 +194,7 @@ def is_snes_header(file_path, byte_pos_of_checksum, mode='quiet'):
 def parse_search_results(file_path):
     candidates = {}
     for pos in checksum_complement_search(file_path):
-        score, hb = is_snes_header(file_path, pos)
+        score, hb = is_snes_header(file_path, pos, 'normal')
         candidates[pos] = {'validity': score, 'buffer': hb}
 
     max_validity = float('-inf')
