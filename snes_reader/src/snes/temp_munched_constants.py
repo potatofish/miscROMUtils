@@ -1,3 +1,5 @@
+
+from src.common.munchie import Munchie
 from src.common.constants import LABEL_CHECKSUM, LABEL_COMPLEMENT
 from munch import Munch
 
@@ -155,7 +157,7 @@ LAYOUT.FULL = LAYOUT.EXPANDED.copy() +  LAYOUT.NORMAL.copy()
 
 # LABELS.FIELD = Munch()
 print(LABELS.FIELD)
-
+Munchie._scream()
 
 # chipset = Munch(keys = KEYS.CONFIG.CHIPSET, labels = LABELS.HARDWARE.CHIPSET.CONFIG)
 # HEADER.CONFIG.CHIPSET = Munch({
