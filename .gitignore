@@ -6,3 +6,12 @@
 
 # Don't ignore .py files
 !*.py
+
+# Don't ignore .toml files
+!*.toml
+
+# Don't ignore .lock files
+!*.lock
+
+# Don't ignore .md files
+!*.md
